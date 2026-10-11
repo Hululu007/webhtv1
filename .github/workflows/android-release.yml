@@ -6,10 +6,7 @@ on:
     - cron: "0 */6 * * *"
   workflow_dispatch:
     inputs:
-      release_tag:
-        description: "Release tag, blank = v<versionName>-yyyyMMddHHmm or v<versionName>-beta-yyyyMMddHHmm"
-        required: false
-        type: string
+     
       
       prerelease:
         description: "Mark as pre-release"
