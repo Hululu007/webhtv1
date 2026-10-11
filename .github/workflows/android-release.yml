@@ -19,10 +19,7 @@ on:
           - auto
           - stable
           - beta
-      release_notes:
-        description: "Release notes, use \\n for Markdown newlines"
-        required: false
-        type: string
+
       prerelease:
         description: "Mark as pre-release"
         required: false
