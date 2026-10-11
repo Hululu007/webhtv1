@@ -5,24 +5,6 @@ on:
     # 每天6小时检查是否需要打包
     - cron: "0 */6 * * *"
   workflow_dispatch:
-    inputs:
-     
-      
-      prerelease:
-        description: "Mark as pre-release"
-        required: false
-        default: false
-        type: boolean
-      sync_cnb:
-        description: "Mirror APKs to CNB Release and sync CNB manifests"
-        required: false
-        default: false
-        type: boolean
-      force_build:
-        description: "Force build even if upstream has no new Release (manual only)"
-        required: false
-        default: false
-        type: boolean
 
 permissions:
   contents: write
