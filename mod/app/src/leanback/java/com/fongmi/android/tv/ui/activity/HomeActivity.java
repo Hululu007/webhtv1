@@ -284,6 +284,13 @@ public class HomeActivity extends BaseActivity implements CustomTitleView.Listen
         selector.addPresenter(ListRow.class, new CustomRowPresenter(16, FocusHighlight.ZOOM_FACTOR_SMALL, HorizontalGridView.FOCUS_SCROLL_ALIGNED), HistoryPresenter.class);
         mBinding.recycler.setAdapter(new ItemBridgeAdapter(mAdapter = new ArrayObjectAdapter(selector)));
         mBinding.recycler.setVerticalSpacing(ResUtil.dp2px(16));
+        try {
+            mFuncAdapter = new ArrayObjectAdapter(new FuncPresenter(this));
+            mBinding.funcRecycler.setHorizontalSpacing(ResUtil.dp2px(16));
+            mBinding.funcRecycler.setRowHeight(android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+            mBinding.funcRecycler.setAdapter(new ItemBridgeAdapter(mFuncAdapter));
+        } catch (Throwable ignored) {
+        }
         mBinding.typeRecycler.setHorizontalSpacing(ResUtil.dp2px(16));
         mBinding.typeRecycler.setRowHeight(android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
         mBinding.typeRecycler.setAdapter(mTypeAdapter = new TypeAdapter(this));
@@ -330,7 +337,7 @@ public class HomeActivity extends BaseActivity implements CustomTitleView.Listen
 
     private void setAdapter() {
         mHistoryAdapter = new ArrayObjectAdapter(mPresenter = new HistoryPresenter(this));
-        mAdapter.add(new ListRow(mFuncAdapter = new ArrayObjectAdapter(new FuncPresenter(this))));
+        if (mFuncAdapter == null) mFuncAdapter = new ArrayObjectAdapter(new FuncPresenter(this));
         if (Setting.isHomeHistory()) mAdapter.add(R.string.home_history);
         mAdapter.add(R.string.home_recommend);
     }
@@ -766,7 +773,17 @@ public class HomeActivity extends BaseActivity implements CustomTitleView.Listen
             if (mWeb.dispatchKeyEvent(event)) return true;
             return super.dispatchKeyEvent(event);
         }
-        if (KeyUtil.isActionDown(event) & KeyUtil.isUpKey(event) && mBinding.typeRecycler.hasFocus()) return requestTitleFocus();
+        try {
+            if (KeyUtil.isActionDown(event) & KeyUtil.isUpKey(event) && mBinding.funcRecycler.hasFocus()) return requestTitleFocus();
+            if (KeyUtil.isActionDown(event) & KeyUtil.isDownKey(event) && mBinding.funcRecycler.hasFocus()) {
+                if (mBinding.typeRecycler.getVisibility() == View.VISIBLE) return mBinding.typeRecycler.requestFocus();
+                return requestContentFocus();
+            }
+        } catch (Throwable ignored) {
+        }
+        if (KeyUtil.isActionDown(event) & KeyUtil.isUpKey(event) && mBinding.typeRecycler.hasFocus()) {
+            try { return mBinding.funcRecycler.requestFocus(); } catch (Throwable ignored) { return requestTitleFocus(); }
+        }
         if (KeyUtil.isActionDown(event) & KeyUtil.isDownKey(event) && mBinding.typeRecycler.hasFocus()) return requestContentFocus();
         if (KeyUtil.isActionDown(event) & KeyUtil.isUpKey(event) && mBinding.recycler.hasFocus() && mBinding.typeRecycler.getVisibility() == View.VISIBLE) updateToolbarVisibility(true);
         if (KeyUtil.isActionDown(event) & KeyUtil.isDownKey(event) && getCurrentFocus() == mBinding.title) return requestHomeFocus();
