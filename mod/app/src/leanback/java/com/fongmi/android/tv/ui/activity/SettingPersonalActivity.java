@@ -350,9 +350,7 @@ public class SettingPersonalActivity extends BaseActivity {
         } catch (Throwable ignored) {
         }
     }
-        } catch (Throwable ignored) {
-        }
-    }
+
 
 
 
