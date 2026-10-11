@@ -10,16 +10,7 @@ on:
         description: "Release tag, blank = v<versionName>-yyyyMMddHHmm or v<versionName>-beta-yyyyMMddHHmm"
         required: false
         type: string
-      release_channel:
-        description: "Release channel, auto uses beta on fongmi-sync"
-        required: false
-        default: auto
-        type: choice
-        options:
-          - auto
-          - stable
-          - beta
-
+      
       prerelease:
         description: "Mark as pre-release"
         required: false
