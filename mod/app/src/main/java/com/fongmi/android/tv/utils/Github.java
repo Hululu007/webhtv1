@@ -2,11 +2,11 @@ package com.fongmi.android.tv.utils;
 
 public class Github {
 
-    private static final String GITHUB_LATEST = "https://github.com/klcb2010/webhtv/releases/latest/download";
-    private static final String GITHUB_RELEASE = "https://github.com/klcb2010/webhtv/releases/download";
-    private static final String GITHUB_API = "https://api.github.com/repos/klcb2010/webhtv/releases/tags";
-    private static final String GITHUB_RELEASES_API = "https://api.github.com/repos/klcb2010/webhtv/releases";
-    private static final String GITHUB_RELEASE_ASSETS_API = "https://api.github.com/repos/klcb2010/webhtv/releases/assets";
+    private static final String GITHUB_LATEST = "https://github.com/xingye84/webhtv1/releases/latest/download";
+    private static final String GITHUB_RELEASE = "https://github.com/xingye84/webhtv1/releases/download";
+    private static final String GITHUB_API = "https://api.github.com/repos/xingye84/webhtv1/releases/tags";
+    private static final String GITHUB_RELEASES_API = "https://api.github.com/repos/xingye84/webhtv1/releases";
+    private static final String GITHUB_RELEASE_ASSETS_API = "https://api.github.com/repos/xingye84/webhtv1/releases/assets";
     private static final String CNB = GITHUB_LATEST; // 本 fork 资源只走 GitHub Releases
 
     public static String getCnbAsset(String name) {
