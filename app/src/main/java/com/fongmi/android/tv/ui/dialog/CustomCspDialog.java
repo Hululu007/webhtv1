@@ -1061,7 +1061,7 @@ public class CustomCspDialog extends BaseAlertDialog {
 
     private final ActivityResultLauncher<Intent> launcher = registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
         if (result.getResultCode() != Activity.RESULT_OK || result.getData() == null || pendingImport == null) return;
-        List<String> paths = FileChooser.getPathsFromIntent(result.getData());
+        List<String> paths = FileChooser.getCopiesFromIntent(result.getData(), true);
         if (paths.isEmpty()) return;
         String path = paths.get(0);
         try {

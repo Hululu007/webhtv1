@@ -12,6 +12,7 @@ import androidx.fragment.app.FragmentActivity;
 import com.fongmi.android.tv.BuildConfig;
 import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.setting.Setting;
+import com.fongmi.android.tv.utils.PermissionUtil;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 /**
@@ -80,8 +81,15 @@ public final class SettingPersonalDialog {
         refresh.run();
 
         autoBackup.root.setOnClickListener(v -> {
-            Setting.putAutoBackup(!Setting.isAutoBackup());
-            refresh.run();
+            if (Setting.isAutoBackup()) {
+                Setting.putAutoBackup(false);
+                refresh.run();
+            } else {
+                PermissionUtil.requestFile(activity, granted -> {
+                    Setting.putAutoBackup(granted);
+                    if (!activity.isFinishing() && !activity.isDestroyed()) refresh.run();
+                });
+            }
         });
         episodeHistory.root.setOnClickListener(v -> {
             Setting.putEpisodeHistory(!Setting.isEpisodeHistory());

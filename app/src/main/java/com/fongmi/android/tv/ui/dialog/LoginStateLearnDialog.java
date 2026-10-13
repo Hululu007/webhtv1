@@ -19,8 +19,10 @@ import androidx.viewbinding.ViewBinding;
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.databinding.DialogLoginStateLearnBinding;
+import com.fongmi.android.tv.setting.Setting;
 import com.fongmi.android.tv.utils.LoginStateSync;
 import com.fongmi.android.tv.utils.Notify;
+import com.fongmi.android.tv.utils.PermissionUtil;
 import com.fongmi.android.tv.utils.ResUtil;
 import com.fongmi.android.tv.utils.Task;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
@@ -138,8 +140,16 @@ public final class LoginStateLearnDialog extends BaseAlertDialog {
     private void onPositive() {
         FragmentActivity activity = requireActivity();
         boolean finish = learning;
-        dismiss();
-        run(activity, finish, callback);
+        Runnable action = () -> {
+            if (activity.isFinishing() || activity.isDestroyed()) return;
+            dismiss();
+            run(activity, finish, callback);
+        };
+        if (LoginStateSync.requiresFileAccessForLearning() && !Setting.hasFileAccess()) {
+            PermissionUtil.requestFile(activity, granted -> { if (granted) action.run(); });
+        } else {
+            action.run();
+        }
     }
 
     private static LinearLayoutCompat quickView(FragmentActivity activity, QuickState state) {

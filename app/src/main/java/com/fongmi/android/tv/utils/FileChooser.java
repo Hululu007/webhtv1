@@ -26,6 +26,8 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 public class FileChooser {
 
@@ -97,6 +99,29 @@ public class FileChooser {
         return paths;
     }
 
+    public static List<String> getCopiesFromIntent(Intent intent) {
+        return getCopiesFromIntent(intent, false);
+    }
+
+    public static List<String> getCopiesFromIntent(Intent intent, boolean persistent) {
+        List<String> paths = new ArrayList<>();
+        if (intent == null) return paths;
+        Set<Uri> uris = new LinkedHashSet<>();
+        ClipData clipData = intent.getClipData();
+        if (clipData != null) {
+            for (int i = 0; i < clipData.getItemCount(); i++) uris.add(clipData.getItemAt(i).getUri());
+        }
+        uris.add(intent.getData());
+        File dir = persistent ? Path.files("config-imports") : Path.cache();
+        for (Uri uri : uris) {
+            if (uri == null) continue;
+            String path = ContentResolver.SCHEME_CONTENT.equals(uri.getScheme())
+                    ? createFileFromUri(App.get(), uri, dir) : getPathFromUri(uri);
+            if (path != null && !path.isEmpty() && !paths.contains(path)) paths.add(path);
+        }
+        return paths;
+    }
+
     private static void addPath(List<String> paths, Uri uri) {
         String path = getPathFromUri(uri);
         if (path != null && !path.isEmpty() && !paths.contains(path)) paths.add(path);
@@ -149,16 +174,32 @@ public class FileChooser {
     }
 
     private static String createFileFromUri(Context context, Uri uri) {
+        return createFileFromUri(context, uri, Path.cache());
+    }
+
+    private static String createFileFromUri(Context context, Uri uri, File dir) {
+        File file = null;
         String[] projection = {MediaStore.MediaColumns.DISPLAY_NAME};
         try (Cursor cursor = context.getContentResolver().query(uri, projection, null, null, null)) {
             if (cursor == null || !cursor.moveToFirst()) return null;
             InputStream is = context.getContentResolver().openInputStream(uri);
             if (is == null) return null;
             int column = cursor.getColumnIndexOrThrow(projection[0]);
-            File file = Path.cache(cursor.getString(column));
-            Path.copy(is, file);
+            String name = new File(cursor.getString(column)).getName();
+            if (!dir.exists() && !dir.mkdirs()) {
+                is.close();
+                return null;
+            }
+            String suffix = name.contains(".") ? name.substring(name.lastIndexOf('.')) : ".tmp";
+            file = File.createTempFile("picked-", suffix, dir);
+            try (InputStream input = is; java.io.FileOutputStream output = new java.io.FileOutputStream(file)) {
+                byte[] buffer = new byte[16384];
+                int read;
+                while ((read = input.read(buffer)) != -1) output.write(buffer, 0, read);
+            }
             return file.getAbsolutePath();
         } catch (Exception e) {
+            if (file != null) Path.clear(file);
             return null;
         }
     }

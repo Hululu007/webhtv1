@@ -31,7 +31,6 @@ import com.fongmi.android.tv.utils.FileChooser;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.QRCode;
 import com.fongmi.android.tv.utils.ResUtil;
-import com.github.catvod.utils.Path;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import org.greenrobot.eventbus.EventBus;
@@ -239,12 +238,13 @@ public class ConfigDialog extends BaseAlertDialog {
     private final ActivityResultLauncher<Intent> launcher = registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
         if (result.getResultCode() != Activity.RESULT_OK || result.getData() == null || result.getData().getData() == null) return;
         FragmentActivity activity = requireActivity();
-        String path = Objects.toString(FileChooser.getPathFromUri(result.getData().getData()), "");
-        if (TextUtils.isEmpty(path)) return;
+        java.util.List<String> paths = FileChooser.getCopiesFromIntent(result.getData(), true);
+        if (paths.isEmpty()) return;
+        String path = paths.get(0);
         App.post(() -> {
             if (activity.isFinishing() || activity.isDestroyed()) return;
             dismissAllowingStateLoss();
-            App.post(() -> ((ConfigListener) activity).setConfig(saveConfig("file:/" + path.replace(Path.rootPath(), ""), binding.name.getText().toString().trim())), 100);
+            App.post(() -> ((ConfigListener) activity).setConfig(saveConfig("file://" + path, binding.name.getText().toString().trim())), 100);
         }, 100);
     });
 }

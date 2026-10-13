@@ -34,6 +34,7 @@ import com.fongmi.android.tv.utils.ProgressRequestBody;
 import com.fongmi.android.tv.utils.ResUtil;
 import com.fongmi.android.tv.utils.ScanTask;
 import com.fongmi.android.tv.utils.SyncFiles;
+import com.fongmi.android.tv.utils.PermissionUtil;
 import com.fongmi.android.tv.utils.Task;
 import com.github.catvod.net.OkHttp;
 import com.google.android.material.bottomsheet.BottomSheetBehavior;
@@ -327,6 +328,14 @@ public class OneKeySyncDialog extends BaseBottomSheetDialog implements SyncDevic
             return;
         }
         SyncOptions options = options();
+        boolean needsSharedStorage = SyncFiles.requiresFileAccess(SyncFiles.getPaths(options))
+                || options.isLoginState() && LoginStateSync.requiresFileAccess();
+        if (needsSharedStorage && !Setting.hasFileAccess()) {
+            PermissionUtil.requestFile(this, granted -> {
+                if (granted && isAdded() && !isStateSaved() && binding != null) startSync();
+            });
+            return;
+        }
         String mode = toRemote ? "1" : "2";
         String url = String.format(Locale.getDefault(), "%s/action?do=sync&mode=%s&type=backup", selected.getIp(), mode);
         binding.start.setEnabled(false);

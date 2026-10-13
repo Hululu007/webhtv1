@@ -28,8 +28,9 @@ import com.fongmi.android.tv.ui.custom.CustomTextListener;
 import com.fongmi.android.tv.utils.FileChooser;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.ResUtil;
-import com.github.catvod.utils.Path;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+
+import java.util.List;
 
 public class ConfigDialog extends BaseAlertDialog {
 
@@ -214,9 +215,10 @@ public class ConfigDialog extends BaseAlertDialog {
     private final ActivityResultLauncher<Intent> launcher = registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
         if (result.getResultCode() != Activity.RESULT_OK || result.getData() == null || result.getData().getData() == null) return;
         String name = binding.name.getText().toString().trim();
-        String path = FileChooser.getPathFromUri(result.getData().getData());
-        if (TextUtils.isEmpty(path)) return;
-        String url = "file:/" + path.replace(Path.rootPath(), "");
+        List<String> paths = FileChooser.getCopiesFromIntent(result.getData(), true);
+        if (paths.isEmpty()) return;
+        String path = paths.get(0);
+        String url = "file://" + path;
         ((ConfigListener) requireParentFragment()).setConfig(saveConfig(url, name));
         dismiss();
     });

@@ -154,6 +154,18 @@ public class LoginStateSync {
         return normalizeLines(Setting.getLoginStatePaths());
     }
 
+    public static boolean requiresFileAccess() {
+        for (String path : learnedPaths()) {
+            Parsed parsed = parse(path);
+            if (parsed != null && ROOT_SDCARD.equals(parsed.key)) return true;
+        }
+        return false;
+    }
+
+    public static boolean requiresFileAccessForLearning() {
+        return !externalLearningPaths().isEmpty();
+    }
+
     public static List<String> pendingPaths() {
         List<String> result = prunePending(learnedPaths(), normalizeLines(Setting.getLoginStatePendingPaths()));
         return result.size() <= MAX_PENDING_PATHS ? result : new ArrayList<>(result.subList(0, MAX_PENDING_PATHS));

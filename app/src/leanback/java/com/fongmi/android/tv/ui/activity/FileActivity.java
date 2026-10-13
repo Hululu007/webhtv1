@@ -48,7 +48,10 @@ public class FileActivity extends BaseActivity implements FileAdapter.OnClickLis
     }
 
     private void checkPermission() {
-        PermissionUtil.requestFile(this, allGranted -> update(Path.root()));
+        PermissionUtil.requestFile(this, allGranted -> {
+            if (allGranted) update(Path.root());
+            else finish();
+        });
     }
 
     private void update(File dir) {

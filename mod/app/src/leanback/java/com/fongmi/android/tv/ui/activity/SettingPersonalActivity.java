@@ -13,6 +13,7 @@ import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.databinding.ActivitySettingPersonalBinding;
 import com.fongmi.android.tv.setting.PlayerSetting;
 import com.fongmi.android.tv.setting.Setting;
+import com.fongmi.android.tv.utils.PermissionUtil;
 import com.fongmi.android.tv.event.RefreshEvent;
 import com.fongmi.android.tv.ui.base.BaseActivity;
 
@@ -144,8 +145,15 @@ public class SettingPersonalActivity extends BaseActivity {
     }
 
     private void setAutoBackup(View view) {
-        Setting.putAutoBackup(!Setting.isAutoBackup());
-        refreshTexts();
+        if (Setting.isAutoBackup()) {
+            Setting.putAutoBackup(false);
+            refreshTexts();
+        } else {
+            PermissionUtil.requestFile(this, granted -> {
+                Setting.putAutoBackup(granted);
+                if (!isFinishing() && !isDestroyed()) refreshTexts();
+            });
+        }
     }
 
     private void setGlobalToast(View view) {

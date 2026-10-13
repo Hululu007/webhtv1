@@ -137,8 +137,8 @@ public class SettingActivity extends BaseActivity implements ConfigListener, Sit
     public void setConfig(Config config) {
         if (config == null) return;
         String url = config.getUrl();
-        if (!TextUtils.isEmpty(url) && url.startsWith("file")) {
-            PermissionUtil.requestFile(this, allGranted -> load(config));
+        if (PermissionUtil.requiresFileAccess(url)) {
+            PermissionUtil.requestFile(this, allGranted -> { if (allGranted) load(config); });
         } else {
             load(config);
         }
@@ -306,6 +306,7 @@ public class SettingActivity extends BaseActivity implements ConfigListener, Sit
 
     private void onBackup(View view) {
         PermissionUtil.requestFile(this, allGranted -> {
+            if (!allGranted) return;
             BackupProgressDialog progress = BackupProgressDialog.open(getSupportFragmentManager(), "备份应用数据");
             AppDatabase.backup(new Callback() {
             @Override
@@ -324,7 +325,9 @@ public class SettingActivity extends BaseActivity implements ConfigListener, Sit
     }
 
     private void onRestore(View view) {
-        PermissionUtil.requestFile(this, allGranted -> RestoreDialog.create().callback(new Callback() {
+        PermissionUtil.requestFile(this, allGranted -> {
+            if (!allGranted) return;
+            RestoreDialog.create().callback(new Callback() {
             @Override
             public void success() {
                 Notify.show(R.string.restore_success);
@@ -335,7 +338,8 @@ public class SettingActivity extends BaseActivity implements ConfigListener, Sit
             public void error() {
                 Notify.show(R.string.restore_fail);
             }
-        }).show(this));
+            }).show(this);
+        });
     }
 
     private void initConfig() {

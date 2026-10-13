@@ -105,7 +105,7 @@ public class HomeActivity extends BaseActivity implements NavigationBarView.OnIt
         mChrome = new WebHomeChromeController(this, mBinding, this, savedInstanceState, WebHomeChromeStartup.restore(mStartupConfig));
         mBinding.getRoot().addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> checkWindowShape(right - left, bottom - top));
         mBinding.navigation.setOnItemSelectedListener(this);
-        PermissionUtil.requestFile(this, allGranted -> PermissionUtil.requestNotify(this));
+        PermissionUtil.requestNotify(this);
         initFragment(savedInstanceState);
         initConfig();
         scheduleAutoCheckUpdate();
@@ -173,7 +173,10 @@ public class HomeActivity extends BaseActivity implements NavigationBarView.OnIt
         } else if (Intent.ACTION_SEND.equals(intent.getAction())) {
             VideoActivity.push(this, intent.getStringExtra(Intent.EXTRA_TEXT));
         } else if (Intent.ACTION_VIEW.equals(intent.getAction()) && intent.getData() != null) {
-            PermissionUtil.requestFile(this, allGranted -> checkType(intent));
+            if (PermissionUtil.requiresFileAccess(intent.getData().toString())) PermissionUtil.requestFile(this, allGranted -> {
+                if (allGranted) checkType(intent);
+            });
+            else checkType(intent);
         } else if (Intent.ACTION_SEARCH.equals(intent.getAction())) {
             String keyword = intent.getStringExtra(SearchManager.QUERY);
             if (!TextUtils.isEmpty(keyword)) SearchActivity.start(this, keyword);
@@ -182,7 +185,13 @@ public class HomeActivity extends BaseActivity implements NavigationBarView.OnIt
 
     private void checkType(Intent intent) {
         if ("text/plain".equals(intent.getType()) || UrlUtil.path(intent.getData()).endsWith(".m3u")) {
-            loadLive("file:/" + FileChooser.getPathFromUri(intent.getData()));
+            String scheme = intent.getData().getScheme();
+            if ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme)) {
+                loadLive(intent.getData().toString());
+            } else {
+                java.util.List<String> paths = FileChooser.getCopiesFromIntent(intent, true);
+                if (!paths.isEmpty()) loadLive("file://" + paths.get(0));
+            }
         } else {
             VideoActivity.push(this, intent.getData().toString());
         }

@@ -18,6 +18,7 @@ import com.fongmi.android.tv.setting.Setting;
 import com.fongmi.android.tv.ui.custom.SpaceItemDecoration;
 import com.fongmi.android.tv.utils.ResUtil;
 import com.fongmi.android.tv.utils.SyncFiles;
+import com.fongmi.android.tv.utils.PermissionUtil;
 import com.github.catvod.utils.Path;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
@@ -43,9 +44,12 @@ public class SyncPathDialog extends BaseAlertDialog {
     private Runnable callback;
 
     public static void show(Fragment fragment, Runnable callback) {
-        SyncPathDialog dialog = new SyncPathDialog();
-        dialog.callback = callback;
-        dialog.show(fragment.getChildFragmentManager(), null);
+        PermissionUtil.requestFile(fragment, granted -> {
+            if (!granted || !fragment.isAdded() || fragment.isStateSaved()) return;
+            SyncPathDialog dialog = new SyncPathDialog();
+            dialog.callback = callback;
+            dialog.show(fragment.getChildFragmentManager(), null);
+        });
     }
 
     @Override

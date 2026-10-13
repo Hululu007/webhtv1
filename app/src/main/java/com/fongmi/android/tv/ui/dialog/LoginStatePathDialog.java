@@ -29,6 +29,7 @@ import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.databinding.AdapterLoginStateTreeBinding;
 import com.fongmi.android.tv.databinding.DialogLoginStatePathBinding;
+import com.fongmi.android.tv.setting.Setting;
 import com.fongmi.android.tv.ui.custom.SpaceItemDecoration;
 import com.fongmi.android.tv.ui.custom.SafeScrollEditText;
 import com.fongmi.android.tv.utils.FileUtil;
@@ -36,6 +37,7 @@ import com.fongmi.android.tv.utils.Formatters;
 import com.fongmi.android.tv.utils.LoginStateSync;
 import com.fongmi.android.tv.utils.LoginStatePathIndex;
 import com.fongmi.android.tv.utils.Notify;
+import com.fongmi.android.tv.utils.PermissionUtil;
 import com.fongmi.android.tv.utils.ResUtil;
 import com.fongmi.android.tv.utils.Task;
 import com.google.android.material.checkbox.MaterialCheckBox;
@@ -223,9 +225,9 @@ public class LoginStatePathDialog extends BaseAlertDialog {
         appRows.clear();
         sdcardRows.clear();
         buildRows(ROOT_APP, 0, appRows);
-        buildRows(ROOT_SDCARD, 0, sdcardRows);
+        if (Setting.hasFileAccess()) buildRows(ROOT_SDCARD, 0, sdcardRows);
         appendMissingRows(ROOT_APP, appRows);
-        appendMissingRows(ROOT_SDCARD, sdcardRows);
+        if (Setting.hasFileAccess()) appendMissingRows(ROOT_SDCARD, sdcardRows);
         appAdapter.notifyDataSetChanged();
         sdcardAdapter.notifyDataSetChanged();
         updateState();
@@ -361,6 +363,12 @@ public class LoginStatePathDialog extends BaseAlertDialog {
     }
 
     private void togglePanel(String root) {
+        if (ROOT_SDCARD.equals(root) && !Setting.hasFileAccess()) {
+            PermissionUtil.requestFile(this, granted -> {
+                if (granted && isAdded() && !isStateSaved()) loadStateAsync(true);
+            });
+            return;
+        }
         if (ROOT_APP.equals(root)) {
             appPanelTouched = true;
             appPanelCollapsed = !appPanelCollapsed;

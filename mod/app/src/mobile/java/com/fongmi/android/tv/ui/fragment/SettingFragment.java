@@ -153,8 +153,8 @@ public class SettingFragment extends BaseFragment implements ConfigListener, Sit
     public void setConfig(Config config) {
         if (config == null) return;
         String url = config.getUrl();
-        if (!TextUtils.isEmpty(url) && url.startsWith("file")) {
-            requireView().post(() -> PermissionUtil.requestFile(this, allGranted -> load(config)));
+        if (PermissionUtil.requiresFileAccess(url)) {
+            requireView().post(() -> PermissionUtil.requestFile(this, allGranted -> { if (allGranted) load(config); }));
         } else {
             load(config);
         }
@@ -318,6 +318,7 @@ public class SettingFragment extends BaseFragment implements ConfigListener, Sit
 
     private void onBackup(View view) {
         PermissionUtil.requestFile(this, allGranted -> {
+            if (!allGranted) return;
             BackupProgressDialog progress = BackupProgressDialog.open(getParentFragmentManager(), "备份应用数据");
             AppDatabase.backup(new Callback() {
             @Override
@@ -336,7 +337,9 @@ public class SettingFragment extends BaseFragment implements ConfigListener, Sit
     }
 
     private void onRestore(View view) {
-        PermissionUtil.requestFile(this, allGranted -> RestoreDialog.create().show(requireActivity(), new Callback() {
+        PermissionUtil.requestFile(this, allGranted -> {
+            if (!allGranted) return;
+            RestoreDialog.create().show(requireActivity(), new Callback() {
             @Override
             public void success() {
                 Notify.show(R.string.restore_success);
@@ -347,7 +350,8 @@ public class SettingFragment extends BaseFragment implements ConfigListener, Sit
             public void error() {
                 Notify.show(R.string.restore_fail);
             }
-        }));
+            });
+        });
     }
 
     private void initConfig() {

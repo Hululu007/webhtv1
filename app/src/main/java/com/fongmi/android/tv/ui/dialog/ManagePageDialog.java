@@ -35,7 +35,6 @@ public final class ManagePageDialog {
     public static void show(FragmentActivity activity) {
         PermissionUtil.requestFile(activity, granted -> {
             if (granted) showInternal(activity);
-            else Notify.show(R.string.setting_custom_csp_permission_required);
         });
     }
 
