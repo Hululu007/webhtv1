@@ -104,6 +104,13 @@ LIVE_METHODS_MOBILE = r'''
         } catch (Throwable ignored) {
         }
     }
+
+    private void stopWebViewIfNeeded() {
+        try { stopWebViewIfNeeded(); } catch (Throwable ignored) {}
+        try { if (mBinding.exo != null) mBinding.exo.setVisibility(android.view.View.VISIBLE); } catch (Throwable ignored) {}
+        try { if (mBinding.video != null) mBinding.video.requestLayout(); } catch (Throwable ignored) {}
+    }
+
 '''
 
 LIVE_METHODS_TV = r'''
@@ -148,6 +155,13 @@ LIVE_METHODS_TV = r'''
         } catch (Throwable ignored) {
         }
     }
+
+    private void stopWebViewIfNeeded() {
+        try { stopWebViewIfNeeded(); } catch (Throwable ignored) {}
+        try { if (mBinding.exo != null) mBinding.exo.setVisibility(android.view.View.VISIBLE); } catch (Throwable ignored) {}
+        try { if (mBinding.video != null) mBinding.video.requestLayout(); } catch (Throwable ignored) {}
+    }
+
 '''
 
 def patch_live(path: pathlib.Path, mobile: bool) -> None:
@@ -189,7 +203,7 @@ def patch_live(path: pathlib.Path, mobile: bool) -> None:
         injected = False
         t2, n = re.subn(
             r"(mPlaybackKey\s*=\s*realUrl\s*;\s*\n(?:\s*updateNavigationKey\(\);\s*\n)?)",
-            r"\1        if (isWebViewChannel()) {\n            startWebView(realUrl);\n            return;\n        }\n        try { if (mWebViewPlayer != null) mWebViewPlayer.detach(); } catch (Throwable ignored) {}\n",
+            r"\1        if (isWebViewChannel()) {\n            startWebView(realUrl);\n            return;\n        }\n        try { stopWebViewIfNeeded(); } catch (Throwable ignored) {}\n",
             t,
             count=1,
         )
@@ -201,7 +215,7 @@ def patch_live(path: pathlib.Path, mobile: bool) -> None:
         if not injected and "startPlayback" in t:
             t3, n3 = re.subn(
                 r"(public void startPlayback\s*\(\s*Result\s+(\w+)\s*,\s*long\s+\w+\s*,\s*MediaMetadata\s+\w+\s*\)\s*\{)",
-                r"\1\n        if (isWebViewChannel()) {\n            try { mPlaybackKey = \2.getRealUrl(); } catch (Throwable ignored) {}\n            startWebView(\2.getRealUrl());\n            return;\n        }\n        try { if (mWebViewPlayer != null) mWebViewPlayer.detach(); } catch (Throwable ignored) {}\n",
+                r"\1\n        if (isWebViewChannel()) {\n            try { mPlaybackKey = \2.getRealUrl(); } catch (Throwable ignored) {}\n            startWebView(\2.getRealUrl());\n            return;\n        }\n        try { stopWebViewIfNeeded(); } catch (Throwable ignored) {}\n",
                 t,
                 count=1,
             )
@@ -227,7 +241,7 @@ def patch_live(path: pathlib.Path, mobile: bool) -> None:
                         f"{indent}    startWebView({url_expr});\n"
                         f"{indent}    return;\n"
                         f"{indent}}}\n"
-                        f"{indent}try {{ if (mWebViewPlayer != null) mWebViewPlayer.detach(); }} catch (Throwable ignored) {{}}\n"
+                        f"{indent}try {{ stopWebViewIfNeeded(); }} catch (Throwable ignored) {{}}\n"
                     )
                     t = t[:line_start] + inject + t[line_start:]
                     print("[mod] injected startPlayer fallback", path)
@@ -253,7 +267,7 @@ def patch_live(path: pathlib.Path, mobile: bool) -> None:
     if t.count("mWebViewPlayer.detach") < 1:
         t = re.sub(
             r"(protected void onDestroy\(\)\s*\{)",
-            r"\1\n        try { if (mWebViewPlayer != null) mWebViewPlayer.detach(); } catch (Throwable ignored) {}",
+            r"\1\n        try { stopWebViewIfNeeded(); } catch (Throwable ignored) {}",
             t,
             count=1,
         )
@@ -281,6 +295,24 @@ def patch_live(path: pathlib.Path, mobile: bool) -> None:
         methods = LIVE_METHODS_MOBILE if mobile else LIVE_METHODS_TV
         idx = t.rfind("\n}")
         t = t[:idx] + "\n" + methods + t[idx:]
+
+    
+    if "stopWebViewIfNeeded" not in t and "private boolean isWebViewChannel" in t:
+        helper = (
+            "\n    private void stopWebViewIfNeeded() {\n"
+            "        try { if (mWebViewPlayer != null) mWebViewPlayer.detach(); } catch (Throwable ignored) {}\n"
+            "        try { if (mBinding.exo != null) mBinding.exo.setVisibility(android.view.View.VISIBLE); } catch (Throwable ignored) {}\n"
+            "        try { if (mBinding.video != null) mBinding.video.requestLayout(); } catch (Throwable ignored) {}\n"
+            "    }\n\n"
+        )
+        t = t.replace("private boolean isWebViewChannel", helper + "    private boolean isWebViewChannel", 1)
+        print("[mod] stopWebViewIfNeeded helper", path)
+    if "mWebViewPlayer != null) mWebViewPlayer.detach()" in t:
+        t = t.replace(
+            "try { if (mWebViewPlayer != null) mWebViewPlayer.detach(); } catch (Throwable ignored) {}",
+            "try { stopWebViewIfNeeded(); } catch (Throwable ignored) {}",
+        )
+        print("[mod] rewired detach->stopWebViewIfNeeded", path)
 
     path.write_text(t, encoding="utf-8")
     print("[mod] LiveActivity webview patched mobile=%s braces=%s" % (mobile, t.count("{") - t.count("}")))
