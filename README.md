@@ -21,7 +21,6 @@
 - AI豆瓣推荐
 - 真退出  - 新增双端
 - ~~自动换源  隐藏此mod项目  因上游播放设置中已自带~~
-- jar预加载  
 - 首页推送开关 -新增手机端 重启生效
 - 豆瓣海报与个性推荐直达播放 需jar本身支持  比如 东篱 clun 肥猫  南风 
 - 播放器设置更多的隐藏开关 - 新增双端
@@ -34,7 +33,7 @@
 - 家长控制 -新增双端
 - 启动进入直播 -新增双端
 - 直播默认全屏 -新增双端
-- webview直播支持 -新增双端 *源自 https://github.com/llb0/webhtv
+- webview直播支持 -新增双端 *源自 https://github.com/llb0/webhtv 特别注意： 算法助手 / LSP 一类 Hook 很容易拦 WebView 的网络请求 导致播放失败
 
   EPG https://raw.githubusercontent.com/sparkssssssssss/epg/main/pp.xml
   
