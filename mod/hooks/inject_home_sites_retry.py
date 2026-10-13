@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""TV/Mobile: retry empty sites; TV: preload home site jar before getVideo."""
+"""TV/Mobile: retry empty Vod sites after config load. (home jar preload removed — CSP warmup is the real path)"""
 import pathlib
 import re
 import sys
@@ -24,25 +24,29 @@ RETRY_HOOK = """
     }
 """
 
-HOME_JAR_HOOK = """
-    private void ensureHomeSiteJarReady() {
-        try {
-            com.fongmi.android.tv.bean.Site home = com.fongmi.android.tv.api.config.VodConfig.get().getHome();
-            if (home == null || home.isEmpty()) return;
-            String jar = home.getJar();
-            if (jar != null && !jar.isEmpty()) {
-                com.fongmi.android.tv.api.loader.BaseLoader.get().parseJar(jar, true);
-            }
-            try { home.recent(); } catch (Throwable ignored) {}
-        } catch (Throwable ignored) {}
-    }
-"""
-
 
 def inject_retry(path: pathlib.Path) -> None:
     if not path.exists():
         return
     t = path.read_text(encoding="utf-8")
+    # Strip obsolete ensureHomeSiteJarReady if a previous build left it in tree
+    if "ensureHomeSiteJarReady" in t:
+        t = re.sub(
+            r"\s*ensureHomeSiteJarReady\(\);\s*\n",
+            "\n",
+            t,
+        )
+        t = re.sub(
+            r"\n\s*private void ensureHomeSiteJarReady\(\) \{.*?\n\s*\}\n",
+            "\n",
+            t,
+            count=1,
+            flags=re.DOTALL,
+        )
+        path.write_text(t, encoding="utf-8")
+        print("[mod] removed obsolete ensureHomeSiteJarReady", path.relative_to(ROOT))
+        t = path.read_text(encoding="utf-8")
+
     if "maybeRetryVodConfigIfEmpty" not in t:
         t2, n = re.subn(
             r"(public void success\(\) \{)",
@@ -51,55 +55,23 @@ def inject_retry(path: pathlib.Path) -> None:
             count=1,
         )
         t = t2
-        if "maybeRetryVodConfigIfEmpty" not in t:
-            # append method before last class brace
-            pass
-        else:
-            if RETRY_HOOK.strip() not in t:
-                t = t.rstrip()
-                if t.endswith("}"):
-                    t = t[:-1] + RETRY_HOOK + "\n}\n"
-        if "maybeRetryVodConfigIfEmpty" in t and RETRY_HOOK.split("maybeRetry")[0] not in t:
-            # method body missing - append
-            if "void maybeRetryVodConfigIfEmpty" not in t:
-                t = t.rstrip()
-                if t.endswith("}"):
-                    t = t[:-1] + RETRY_HOOK + "\n}\n"
+        if "void maybeRetryVodConfigIfEmpty" not in t:
+            t = t.rstrip()
+            if t.endswith("}"):
+                t = t[:-1] + RETRY_HOOK + "\n}\n"
         path.write_text(t, encoding="utf-8")
         print("[mod] retry", path.relative_to(ROOT))
     else:
-        print("[mod] retry already", path.relative_to(ROOT))
-
-
-def inject_home_jar(path: pathlib.Path) -> None:
-    if not path.exists():
-        return
-    t = path.read_text(encoding="utf-8")
-    if "ensureHomeSiteJarReady" not in t:
-        # inject call at start of getVideo(boolean
-        t2, n = re.subn(
-            r"(private void getVideo\(boolean[^{]*\{\s*)",
-            r"\1ensureHomeSiteJarReady();\n        ",
-            t,
-            count=1,
-        )
-        if n == 0:
-            print("[mod] WARN no getVideo(boolean)", path)
-            return
-        t = t2
-        if "void ensureHomeSiteJarReady" not in t:
+        if "void maybeRetryVodConfigIfEmpty" not in t:
             t = t.rstrip()
             if t.endswith("}"):
-                t = t[:-1] + HOME_JAR_HOOK + "\n}\n"
-        path.write_text(t, encoding="utf-8")
-        print("[mod] home jar", path.relative_to(ROOT))
-    else:
-        print("[mod] home jar already", path.relative_to(ROOT))
+                t = t[:-1] + RETRY_HOOK + "\n}\n"
+            path.write_text(t, encoding="utf-8")
+            print("[mod] retry method body", path.relative_to(ROOT))
+        else:
+            print("[mod] retry already", path.relative_to(ROOT))
 
 
 inject_retry(ROOT / "app/src/leanback/java/com/fongmi/android/tv/ui/activity/HomeActivity.java")
 inject_retry(ROOT / "app/src/mobile/java/com/fongmi/android/tv/ui/activity/HomeActivity.java")
-inject_home_jar(ROOT / "app/src/leanback/java/com/fongmi/android/tv/ui/activity/HomeActivity.java")
-# mobile may not have getVideo(boolean) - optional
-inject_home_jar(ROOT / "app/src/mobile/java/com/fongmi/android/tv/ui/activity/HomeActivity.java")
-print("[mod] home sites + jar done")
+print("[mod] home sites retry done (no jar preload)")
