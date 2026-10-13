@@ -1,0 +1,61 @@
+name: Sync upstream main
+
+on:
+  schedule:
+    # GitHub Actions uses UTC; this runs every Friday at 11:00 Asia/Shanghai.
+    - cron: "0 3 * * 5"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: upstream-main-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Merge upstream main
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/klcb2010/webhtv.git
+
+      - name: Fetch upstream main
+        run: git fetch --no-tags upstream refs/heads/main:refs/remotes/upstream/main
+
+      - name: Merge upstream main
+        id: merge
+        run: |
+          local_sha="$(git rev-parse HEAD)"
+          upstream_sha="$(git rev-parse upstream/main)"
+
+          if git merge-base --is-ancestor "$upstream_sha" "$local_sha"; then
+            echo "Upstream main is already merged at $upstream_sha"
+            echo "updated=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if ! git merge --no-edit upstream/main; then
+            git merge --abort
+            echo "::error::Upstream merge failed; main will not be pushed. Resolve the conflict manually."
+            exit 1
+          fi
+
+          echo "updated=true" >> "$GITHUB_OUTPUT"
+          echo "Merged upstream main at $(git rev-parse HEAD)"
+
+      - name: Push main
+        if: steps.merge.outputs.updated == 'true'
+        run: git push origin main
