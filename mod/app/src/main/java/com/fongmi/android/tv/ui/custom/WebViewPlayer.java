@@ -17,6 +17,7 @@ import android.webkit.SslErrorHandler;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -43,6 +44,21 @@ public class WebViewPlayer {
             + "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
     private static final String MOBILE_UA = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 "
             + "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36";
+    /** Prefer mobile UA for lighter H5; fall back to desktop only if needed later. */
+    private static final String PLAY_UA = MOBILE_UA;
+    /** After first successful main-frame finish, prefer disk cache for same process. */
+    private static volatile boolean sPageCacheReady = false;
+    /** Non-player hosts to block (ads / analytics). Never block yangshipin / cmg / wasm / media. */
+    private static final String[] BLOCK_HOST_SNIPS = {
+            "google-analytics.com", "googletagmanager.com", "googlesyndication.com",
+            "doubleclick.net", "googleadservices.com", "scorecardresearch.com",
+            "facebook.com/tr", "connect.facebook.net", "hm.baidu.com",
+            "cnzz.com", "umeng.com", "sensorsdata", "growingio.com",
+            "hotjar.com", "clarity.ms", "sentry.io", "bugly.qq.com",
+            "tdm.qq.com", "pingjs.qq.com", "beacon.qq.com",
+            "als.baidu.com", "pos.baidu.com", "cpro.baidu.com",
+            "lianmeng.360.cn", "dsp.toutiao.com", "ad.toutiao.com",
+    };
 
     // onPageStarted FastLoading 清理脚本
     private static final String FAST_LOADING_JS = """
@@ -308,6 +324,11 @@ public class WebViewPlayer {
         } else {
             // 切台：复用当前webview直接加载新链接
             SpiderDebug.log(TAG, "switch url: %s", url);
+            try {
+                if (sPageCacheReady) {
+                    activeWebView.getSettings().setCacheMode(WebSettings.LOAD_CACHE_ELSE_NETWORK);
+                }
+            } catch (Throwable ignored) {}
             activeWebView.stopLoading();
             this.touchListener = touchListener;
             this.playbackListener = playbackListener;
@@ -341,7 +362,7 @@ public class WebViewPlayer {
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
         s.setDatabaseEnabled(true);
-        s.setCacheMode(WebSettings.LOAD_DEFAULT);
+        s.setCacheMode(sPageCacheReady ? WebSettings.LOAD_CACHE_ELSE_NETWORK : WebSettings.LOAD_DEFAULT);
         s.setJavaScriptCanOpenWindowsAutomatically(true);
         s.setMediaPlaybackRequiresUserGesture(false);
         try {
@@ -349,7 +370,8 @@ public class WebViewPlayer {
                 s.setSafeBrowsingEnabled(false);
             }
         } catch (Throwable ignored) {}
-        s.setUserAgentString(DESKTOP_UA);
+        s.setUserAgentString(PLAY_UA);
+        logI("ua=mobile cacheReady=" + sPageCacheReady);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
         s.setLoadWithOverviewMode(true);
         s.setUseWideViewPort(true);
@@ -393,14 +415,51 @@ public class WebViewPlayer {
                     + "}catch(e){}})();",
                     null);
 
+                // Mark process cache warm after first successful main document load
+                sPageCacheReady = true;
+                try {
+                    WebSettings ws = view.getSettings();
+                    if (ws != null) ws.setCacheMode(WebSettings.LOAD_CACHE_ELSE_NETWORK);
+                } catch (Throwable ignored) {}
                 // yangshipin often needs a user gesture / click to start
                 mainHandler.postDelayed(() -> {
                     try { simulateClick(view); } catch (Throwable ignored) {}
                 }, 800);
+                // Second click only if playback not started yet
                 mainHandler.postDelayed(() -> {
+                    if (webPlaying) return;
                     try { simulateClick(view); } catch (Throwable ignored) {}
                 }, 2000);
                 SpiderDebug.log(TAG, "onPageFinished %s", url);
+            }
+
+
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                try {
+                    if (request == null || request.getUrl() == null) {
+                        return super.shouldInterceptRequest(view, request);
+                    }
+                    String u = request.getUrl().toString();
+                    String host = request.getUrl().getHost();
+                    if (host == null) host = "";
+                    String lower = u.toLowerCase();
+                    // Never intercept media / player / wasm — WebView must load these natively
+                    if (lower.contains(".wasm") || lower.contains(".m3u8") || lower.contains(".ts")
+                            || lower.contains(".mp4") || lower.contains(".mpd") || lower.contains(".flv")
+                            || lower.contains("yangshipin") || lower.contains("cmg.cn")
+                            || lower.contains("cctv") || lower.contains("open.ysp")
+                            || lower.contains("player") || lower.contains("video")) {
+                        return super.shouldInterceptRequest(view, request);
+                    }
+                    for (String snip : BLOCK_HOST_SNIPS) {
+                        if (host.contains(snip) || lower.contains(snip)) {
+                            return new WebResourceResponse("text/plain", "utf-8",
+                                    new java.io.ByteArrayInputStream(new byte[0]));
+                        }
+                    }
+                } catch (Throwable ignored) {}
+                return super.shouldInterceptRequest(view, request);
             }
 
             @Override
