@@ -547,12 +547,17 @@ public class WebViewPlayer {
     private void destroyWebView(WebView wv) {
         if (wv == null) return;
         try {
-            wv.stopLoading();
-            wv.loadUrl("about:blank");
-            wv.onPause();
-            wv.removeAllViews();
-            if (container != null) container.removeView(wv);
-            wv.destroy();
+            try { wv.setVisibility(View.GONE); } catch (Throwable ignored) {}
+            try { wv.stopLoading(); } catch (Throwable ignored) {}
+            try { wv.loadUrl("about:blank"); } catch (Throwable ignored) {}
+            try { wv.onPause(); } catch (Throwable ignored) {}
+            try { wv.removeAllViews(); } catch (Throwable ignored) {}
+            try {
+                android.view.ViewParent parent = wv.getParent();
+                if (parent instanceof ViewGroup) ((ViewGroup) parent).removeView(wv);
+                else if (container != null) container.removeView(wv);
+            } catch (Throwable ignored) {}
+            try { wv.destroy(); } catch (Throwable ignored) {}
         } catch (Throwable ignored) {}
     }
 

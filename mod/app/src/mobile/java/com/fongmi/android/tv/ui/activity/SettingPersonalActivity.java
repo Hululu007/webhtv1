@@ -13,6 +13,7 @@ import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.databinding.ActivitySettingPersonalBinding;
 import com.fongmi.android.tv.setting.PlayerSetting;
 import com.fongmi.android.tv.setting.Setting;
+import com.fongmi.android.tv.event.RefreshEvent;
 import com.fongmi.android.tv.ui.base.BaseActivity;
 
 public class SettingPersonalActivity extends BaseActivity {
@@ -272,7 +273,8 @@ public class SettingPersonalActivity extends BaseActivity {
 
     private void setHomePush(View view) {
         Setting.putHomePush(!Setting.isHomePush());
-        refreshTexts();
+        try { refreshTexts(); } catch (Throwable ignored) {}
+        try { RefreshEvent.home(); } catch (Throwable ignored) {}
     }
 
 

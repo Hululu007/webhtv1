@@ -105,11 +105,27 @@ LIVE_METHODS_MOBILE = r'''
         }
     }
 
+
     private void stopWebViewIfNeeded() {
-        try { stopWebViewIfNeeded(); } catch (Throwable ignored) {}
-        try { if (mBinding.exo != null) mBinding.exo.setVisibility(android.view.View.VISIBLE); } catch (Throwable ignored) {}
+        try {
+            if (mWebViewPlayer != null) {
+                mWebViewPlayer.detach();
+                mWebViewPlayer = null;
+            }
+        } catch (Throwable ignored) {}
+        try {
+            if (mBinding.exo != null) {
+                mBinding.exo.setVisibility(android.view.View.VISIBLE);
+                mBinding.exo.bringToFront();
+            }
+        } catch (Throwable ignored) {}
+        try {
+            if (mBinding.widget != null) mBinding.widget.getRoot().bringToFront();
+            if (mBinding.control != null) mBinding.control.getRoot().bringToFront();
+        } catch (Throwable ignored) {}
         try { if (mBinding.video != null) mBinding.video.requestLayout(); } catch (Throwable ignored) {}
     }
+
 
 '''
 
@@ -156,11 +172,27 @@ LIVE_METHODS_TV = r'''
         }
     }
 
+
     private void stopWebViewIfNeeded() {
-        try { stopWebViewIfNeeded(); } catch (Throwable ignored) {}
-        try { if (mBinding.exo != null) mBinding.exo.setVisibility(android.view.View.VISIBLE); } catch (Throwable ignored) {}
+        try {
+            if (mWebViewPlayer != null) {
+                mWebViewPlayer.detach();
+                mWebViewPlayer = null;
+            }
+        } catch (Throwable ignored) {}
+        try {
+            if (mBinding.exo != null) {
+                mBinding.exo.setVisibility(android.view.View.VISIBLE);
+                mBinding.exo.bringToFront();
+            }
+        } catch (Throwable ignored) {}
+        try {
+            if (mBinding.widget != null) mBinding.widget.getRoot().bringToFront();
+            if (mBinding.control != null) mBinding.control.getRoot().bringToFront();
+        } catch (Throwable ignored) {}
         try { if (mBinding.video != null) mBinding.video.requestLayout(); } catch (Throwable ignored) {}
     }
+
 
 '''
 
@@ -300,8 +332,9 @@ def patch_live(path: pathlib.Path, mobile: bool) -> None:
     if "stopWebViewIfNeeded" not in t and "private boolean isWebViewChannel" in t:
         helper = (
             "\n    private void stopWebViewIfNeeded() {\n"
-            "        try { if (mWebViewPlayer != null) mWebViewPlayer.detach(); } catch (Throwable ignored) {}\n"
-            "        try { if (mBinding.exo != null) mBinding.exo.setVisibility(android.view.View.VISIBLE); } catch (Throwable ignored) {}\n"
+            "        try { if (mWebViewPlayer != null) { mWebViewPlayer.detach(); mWebViewPlayer = null; } } catch (Throwable ignored) {}\n"
+            "        try { if (mBinding.exo != null) { mBinding.exo.setVisibility(android.view.View.VISIBLE); mBinding.exo.bringToFront(); } } catch (Throwable ignored) {}\n"
+            "        try { if (mBinding.widget != null) mBinding.widget.getRoot().bringToFront(); if (mBinding.control != null) mBinding.control.getRoot().bringToFront(); } catch (Throwable ignored) {}\n"
             "        try { if (mBinding.video != null) mBinding.video.requestLayout(); } catch (Throwable ignored) {}\n"
             "    }\n\n"
         )
@@ -313,6 +346,24 @@ def patch_live(path: pathlib.Path, mobile: bool) -> None:
             "try { stopWebViewIfNeeded(); } catch (Throwable ignored) {}",
         )
         print("[mod] rewired detach->stopWebViewIfNeeded", path)
+
+    
+    # Fix recursive stopWebViewIfNeeded from bad prior patch
+    if "try { stopWebViewIfNeeded(); }" in t and "private void stopWebViewIfNeeded" in t:
+        t = t.replace(
+            """    private void stopWebViewIfNeeded() {
+        try { stopWebViewIfNeeded(); } catch (Throwable ignored) {}
+        try { if (mBinding.exo != null) mBinding.exo.setVisibility(android.view.View.VISIBLE); } catch (Throwable ignored) {}
+        try { if (mBinding.video != null) mBinding.video.requestLayout(); } catch (Throwable ignored) {}
+    }""",
+            """    private void stopWebViewIfNeeded() {
+        try { if (mWebViewPlayer != null) { mWebViewPlayer.detach(); mWebViewPlayer = null; } } catch (Throwable ignored) {}
+        try { if (mBinding.exo != null) { mBinding.exo.setVisibility(android.view.View.VISIBLE); mBinding.exo.bringToFront(); } } catch (Throwable ignored) {}
+        try { if (mBinding.widget != null) mBinding.widget.getRoot().bringToFront(); if (mBinding.control != null) mBinding.control.getRoot().bringToFront(); } catch (Throwable ignored) {}
+        try { if (mBinding.video != null) mBinding.video.requestLayout(); } catch (Throwable ignored) {}
+    }""",
+        )
+        print("[mod] fixed recursive stopWebViewIfNeeded", path)
 
     path.write_text(t, encoding="utf-8")
     print("[mod] LiveActivity webview patched mobile=%s braces=%s" % (mobile, t.count("{") - t.count("}")))
