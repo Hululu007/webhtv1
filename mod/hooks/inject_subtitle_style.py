@@ -328,6 +328,46 @@ def patch_mpv_options_apply(path: Path) -> None:
         print("[mod] no sub-ass-override string in", path.name)
 
 
+def ensure_refresh_subtitle(path: Path) -> None:
+    if not path.exists():
+        return
+    text = path.read_text(encoding="utf-8")
+    orig = text
+    if "SUBTITLE" not in text and "enum Type" in text:
+        import re as _re
+        m = _re.search(r"(enum\s+Type\s*\{)([^}]*)(\})", text)
+        if m and "SUBTITLE" not in m.group(2):
+            body = m.group(2).rstrip()
+            if body.strip().endswith(","):
+                body = body + "\n        SUBTITLE"
+            else:
+                body = body + ",\n        SUBTITLE"
+            text = text[: m.start()] + m.group(1) + body + m.group(3) + text[m.end() :]
+    if "public static void subtitle()" not in text:
+        if "public static void player()" in text:
+            text = text.replace(
+                "    public static void player() {\n"
+                "        EventBus.getDefault().post(new RefreshEvent(Type.PLAYER));\n"
+                "    }\n",
+                "    public static void player() {\n"
+                "        EventBus.getDefault().post(new RefreshEvent(Type.PLAYER));\n"
+                "    }\n"
+                "\n"
+                "    public static void subtitle() {\n"
+                "        EventBus.getDefault().post(new RefreshEvent(Type.SUBTITLE));\n"
+                "    }\n",
+                1,
+            )
+        else:
+            print("[mod] WARN RefreshEvent.subtitle not added (no player())")
+    if text != orig:
+        path.write_text(text, encoding="utf-8")
+        print("[mod] RefreshEvent.subtitle ensured")
+    else:
+        print("[mod] RefreshEvent.subtitle already")
+
+
+
 def main() -> None:
     patch_exo(ROOT / "app/src/main/java/com/fongmi/android/tv/player/exo/ExoUtil.java")
     mpv = ROOT / "app/src/main/java/androidx/media3/mpvplayer/MpvPlayer.java"
@@ -341,34 +381,3 @@ def main() -> None:
 if __name__ == "__main__":
     main()
 
-
-def ensure_refresh_subtitle(path: Path) -> None:
-    if not path.exists():
-        return
-    text = path.read_text(encoding="utf-8")
-    if "public static void subtitle()" in text:
-        print("[mod] RefreshEvent.subtitle already")
-        return
-    if "public static void player()" in text and "subtitle()" not in text:
-        text = text.replace(
-            """    public static void player() {
-        EventBus.getDefault().post(new RefreshEvent(Type.PLAYER));
-    }
-""",
-            """    public static void player() {
-        EventBus.getDefault().post(new RefreshEvent(Type.PLAYER));
-    }
-
-    public static void subtitle() {
-        EventBus.getDefault().post(new RefreshEvent(Type.SUBTITLE));
-    }
-""",
-            1,
-        )
-        path.write_text(text, encoding="utf-8")
-        print("[mod] RefreshEvent.subtitle added")
-    else:
-        print("[mod] WARN RefreshEvent.subtitle not added")
-
-
-ensure_refresh_subtitle(ROOT / "app/src/main/java/com/fongmi/android/tv/event/RefreshEvent.java")
