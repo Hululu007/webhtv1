@@ -265,19 +265,14 @@ public final class AssrtSubtitleMatch {
             com.fongmi.android.tv.subtitle.SubtitleFontManager.prepareAllFonts();
         } catch (Throwable ignored) {
         }
-        // 注意：不要发 RefreshEvent.SUBTITLE —— 那是加载字幕文件路径，不是样式刷新
-        // 样式在下次 ExoUtil.setPlayerView / MPV applyUserAssStyle 时生效
+        // Do NOT post RefreshEvent.SUBTITLE (that loads a subtitle file path).
         try {
-            applyMpvSubtitleStyleFromNotify();
+            com.fongmi.android.tv.player.exo.ExoUtil.reapplySubtitleStyle();
         } catch (Throwable ignored) {
         }
-        Log.i(TAG, "notifySubtitleStyleChanged font prepared");
+        Log.i(TAG, "notifySubtitleStyleChanged font prepared + exo reapply");
     }
 
-    /** 尽力对当前引擎重写 MPV 字幕样式；EXO 需在 setPlayerView 时生效 */
-    private static void applyMpvSubtitleStyleFromNotify() {
-        // 无全局 player 引用时跳过；播放中切换字体/颜色后进下一次起播会生效
-    }
 
     public static void applyMpvSubtitleStyle(PlayerManager player) {
         if (player == null) return;
