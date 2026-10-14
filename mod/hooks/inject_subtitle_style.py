@@ -8,7 +8,7 @@ ROOT = Path(sys.argv[1] if len(sys.argv) > 1 else ".")
 
 EXO_CAPTION_STYLE = """
 public static CaptionStyleCompat getCaptionStyle() {
-        // 始终用个性设置的颜色/字体；内封 ASS 也不再被系统 Caption 覆盖
+        try { com.fongmi.android.tv.subtitle.SubtitleFontManager.prepareAllFonts(); } catch (Throwable ignored) {}
         int fg = Color.WHITE;
         try { fg = Setting.getSubtitleColorArgb(); } catch (Throwable ignored) {}
         android.graphics.Typeface tf = null;
@@ -69,6 +69,10 @@ APPLY_METHOD = r"""
                     }
                     if (font != null) m.invoke(this, "sub-font", font);
                     if (id != null) try { m.invoke(this, "sub-font", id); } catch (Throwable ignored) {}
+                    try {
+                        String disp = MpvSubtitleStylePolicy.getSubFontDisplayName();
+                        if (disp != null && !disp.isEmpty()) m.invoke(this, "sub-font", disp);
+                    } catch (Throwable ignored) {}
                     if (font != null) m.invoke(this, "sub-font", font);
                     ok = true;
                     lastErr = "via this." + mn;
