@@ -1017,26 +1017,21 @@ public class Setting {
     }
 
     /**
-     * 字幕字体：内置 yahei/youyuan/kaiti（雅黑/幼圆/楷体）。
+     * 字幕字体：内置 jiangcheng/youyuan/kaiti（江城圆体/幼圆/楷体）。
      * 仍用 subtitle_font_index；旧 0~4 会映射到三选一。
      */
     public static int getSubtitleFontIndex() {
-        // 0幼圆 1楷体 2江城圆体
-        try {
-            if (!Prefers.getBoolean("subtitle_font_migrated_v4", false)) {
-                int raw = Prefers.getInt("subtitle_font_index", 0);
-                int v;
-                // 旧含雅黑：0雅黑 1幼圆 2楷体
-                if (raw == 1) v = 0;
-                else if (raw == 2) v = 1;
-                else v = 0;
-                Prefers.put("subtitle_font_index", v);
-                Prefers.put("subtitle_font_migrated_v4", true);
-                return SubtitleFontManager.normalizeIndex(v);
-            }
-        } catch (Throwable ignored) {
+        int v = Prefers.getInt("subtitle_font_index", 1); // 默认幼圆
+        // 旧版 5 档 → 新 3 档
+        if (v < 0) v = 0;
+        if (v > 2) {
+            // 旧：0楷 1黑 2宋 3仿 4等宽
+            if (v == 0) v = 2; // 楷体
+            else if (v == 1 || v == 4) v = 0; // 黑/等宽 → 雅黑
+            else v = 0; // 宋/仿 → 雅黑
+            try { Prefers.put("subtitle_font_index", v); } catch (Throwable ignored) {}
         }
-        return SubtitleFontManager.normalizeIndex(Prefers.getInt("subtitle_font_index", 0));
+        return SubtitleFontManager.normalizeIndex(v);
     }
 
     public static void putSubtitleFontIndex(int index) {
@@ -1047,7 +1042,7 @@ public class Setting {
         putSubtitleFontIndex((getSubtitleFontIndex() + 1) % SubtitleFontManager.count());
     }
 
-    /** 稳定 ID：yahei / youyuan / kaiti */
+    /** 稳定 ID：jiangcheng / youyuan / kaiti */
     public static String getSubtitleFontId() {
         return SubtitleFontManager.idOf(getSubtitleFontIndex());
     }
@@ -1076,7 +1071,7 @@ public class Setting {
             return SubtitleFontManager.labelOf(getSubtitleFontIndex(), zh);
         } catch (Throwable ignored) {
         }
-        return zh ? "幼圆" : "YouYuan";
+        return zh ? "雅黑" : "YaHei";
     }
 
     public static int getExitClearCacheGb() {

@@ -8,12 +8,18 @@ ROOT = Path(sys.argv[1] if len(sys.argv) > 1 else ".")
 
 EXO_CAPTION_STYLE = """
 public static CaptionStyleCompat getCaptionStyle() {
+        // 个性设置优先；内封 ASS 文字轨由 setApplyEmbeddedStyles(false) 避免覆盖
         try { com.fongmi.android.tv.subtitle.SubtitleFontManager.prepareAllFonts(); } catch (Throwable ignored) {}
         int fg = Color.WHITE;
         try { fg = Setting.getSubtitleColorArgb(); } catch (Throwable ignored) {}
         android.graphics.Typeface tf = null;
         try { tf = Setting.getSubtitleTypeface(); } catch (Throwable ignored) {}
         if (tf == null) tf = android.graphics.Typeface.SANS_SERIF;
+        try {
+            android.util.Log.i("SubtitleStyle", "getCaptionStyle fg=#" + Integer.toHexString(fg)
+                + " tf=" + (tf != null ? tf.toString() : "null")
+                + " fontId=" + Setting.getSubtitleFontId());
+        } catch (Throwable ignored) {}
         return new CaptionStyleCompat(fg, Color.TRANSPARENT, Color.TRANSPARENT, CaptionStyleCompat.EDGE_TYPE_OUTLINE, Color.BLACK, tf);
     }
 """.strip()
@@ -69,10 +75,6 @@ APPLY_METHOD = r"""
                     }
                     if (font != null) m.invoke(this, "sub-font", font);
                     if (id != null) try { m.invoke(this, "sub-font", id); } catch (Throwable ignored) {}
-                    try {
-                        String disp = MpvSubtitleStylePolicy.getSubFontDisplayName();
-                        if (disp != null && !disp.isEmpty()) m.invoke(this, "sub-font", disp);
-                    } catch (Throwable ignored) {}
                     if (font != null) m.invoke(this, "sub-font", font);
                     ok = true;
                     lastErr = "via this." + mn;
@@ -117,12 +119,11 @@ def patch_exo(path: Path) -> None:
         return
     t = path.read_text(encoding="utf-8")
     orig = t
-    if "import com.fongmi.android.tv.setting.Setting;" not in t:
+    if "com.fongmi.android.tv.setting.Setting" not in t:
         t = t.replace(
             "import com.fongmi.android.tv.setting.PlayerSetting;",
             "import com.fongmi.android.tv.setting.PlayerSetting;\nimport com.fongmi.android.tv.setting.Setting;",
         )
-    # 关闭内封样式，否则 ASS 自带颜色/字体会盖掉个性设置（手机/TV 共用 ExoUtil）
     t = t.replace(
         "view.getSubtitleView().setApplyEmbeddedStyles(true);",
         "view.getSubtitleView().setApplyEmbeddedStyles(false);",
@@ -131,7 +132,7 @@ def patch_exo(path: Path) -> None:
         "view.getSubtitleView().setApplyEmbeddedStyles(PlayerSetting.isCaption());",
         "view.getSubtitleView().setApplyEmbeddedStyles(false);",
     )
-    # 顺序：先关 embedded，再 setStyle
+    # 顺序：先关 embedded 再 setStyle
     t = t.replace(
         "view.getSubtitleView().setStyle(getCaptionStyle());\n        view.getSubtitleView().setApplyEmbeddedStyles(false);",
         "view.getSubtitleView().setApplyEmbeddedStyles(false);\n        view.getSubtitleView().setStyle(getCaptionStyle());",
@@ -139,7 +140,6 @@ def patch_exo(path: Path) -> None:
     pat = re.compile(r"public static CaptionStyleCompat getCaptionStyle\(\)\s*\{[^}]*\}", re.S)
     if pat.search(t):
         t = pat.sub(EXO_CAPTION_STYLE, t, count=1)
-        print("[mod] getCaptionStyle replaced")
     else:
         print("[mod] WARN: getCaptionStyle not found")
     if t != orig:
@@ -147,7 +147,6 @@ def patch_exo(path: Path) -> None:
         print("[mod] patched", path)
     else:
         print("[mod] no change", path)
-
 
 
 def patch_mpv_player(path: Path) -> None:
@@ -344,56 +343,14 @@ def patch_mpv_options_apply(path: Path) -> None:
         print("[mod] no sub-ass-override string in", path.name)
 
 
-def ensure_refresh_subtitle(path: Path) -> None:
-    if not path.exists():
-        return
-    text = path.read_text(encoding="utf-8")
-    orig = text
-    if "SUBTITLE" not in text and "enum Type" in text:
-        import re as _re
-        m = _re.search(r"(enum\s+Type\s*\{)([^}]*)(\})", text)
-        if m and "SUBTITLE" not in m.group(2):
-            body = m.group(2).rstrip()
-            if body.strip().endswith(","):
-                body = body + "\n        SUBTITLE"
-            else:
-                body = body + ",\n        SUBTITLE"
-            text = text[: m.start()] + m.group(1) + body + m.group(3) + text[m.end() :]
-    if "public static void subtitle()" not in text:
-        if "public static void player()" in text:
-            text = text.replace(
-                "    public static void player() {\n"
-                "        EventBus.getDefault().post(new RefreshEvent(Type.PLAYER));\n"
-                "    }\n",
-                "    public static void player() {\n"
-                "        EventBus.getDefault().post(new RefreshEvent(Type.PLAYER));\n"
-                "    }\n"
-                "\n"
-                "    public static void subtitle() {\n"
-                "        EventBus.getDefault().post(new RefreshEvent(Type.SUBTITLE));\n"
-                "    }\n",
-                1,
-            )
-        else:
-            print("[mod] WARN RefreshEvent.subtitle not added (no player())")
-    if text != orig:
-        path.write_text(text, encoding="utf-8")
-        print("[mod] RefreshEvent.subtitle ensured")
-    else:
-        print("[mod] RefreshEvent.subtitle already")
-
-
-
 def main() -> None:
     patch_exo(ROOT / "app/src/main/java/com/fongmi/android/tv/player/exo/ExoUtil.java")
     mpv = ROOT / "app/src/main/java/androidx/media3/mpvplayer/MpvPlayer.java"
     patch_mpv_player(mpv)
     patch_mpv_options_apply(mpv)
     patch_ass_policy(ROOT / "app/src/main/java/com/fongmi/android/tv/player/mpv/MpvSubtitleStylePolicy.java")
-    ensure_refresh_subtitle(ROOT / "app/src/main/java/com/fongmi/android/tv/event/RefreshEvent.java")
     print("[mod] inject_subtitle_style done")
 
 
 if __name__ == "__main__":
     main()
-

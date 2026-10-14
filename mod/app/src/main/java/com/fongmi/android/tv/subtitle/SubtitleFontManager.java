@@ -7,27 +7,25 @@ import android.util.Log;
 import com.fongmi.android.tv.App;
 
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.util.Locale;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 内置字幕字体：youyuan / kaiti / jiangcheng400W（幼圆 / 楷体 / 江城圆体）。
+ * 内置字幕字体：jiangcheng / youyuan / kaiti（assets/fonts/）。
  * Mobile / Leanback / Exo / MPV 共用。
- * 写入 files/subtitle_fonts 时同时落盘 id 与中文别名，方便 libass/MPV 按 FontName 命中。
  */
 public final class SubtitleFontManager {
 
     private static final String TAG = "SubtitleFont";
+    public static final String ID_JIANGCHENG = "jiangcheng";
     public static final String ID_YOUYUAN = "youyuan";
     public static final String ID_KAITI = "kaiti";
-    public static final String ID_JIANGCHENG = "jiangcheng400W";
 
-    private static final String[] IDS = {ID_YOUYUAN, ID_KAITI, ID_JIANGCHENG};
-    private static final String[] LABELS_ZH = {"幼圆", "楷体", "江城圆体"};
-    private static final String[] LABELS_EN = {"YouYuan", "KaiTi", "JiangCheng"};
+    private static final String[] IDS = {ID_JIANGCHENG, ID_YOUYUAN, ID_KAITI};
+    private static final String[] LABELS_ZH = {"江城圆体", "幼圆", "楷体"};
+    private static final String[] LABELS_EN = {"JiangCheng", "YouYuan", "KaiTi"};
 
     private static final ConcurrentHashMap<String, Typeface> TYPEFACE_CACHE = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, File> FILE_CACHE = new ConcurrentHashMap<>();
@@ -40,20 +38,20 @@ public final class SubtitleFontManager {
     }
 
     public static String idOf(int index) {
-        return IDS[normalizeIndex(index)];
+        int i = normalizeIndex(index);
+        return IDS[i];
     }
 
     public static int indexOfId(String id) {
         if (id == null) return 0;
         String s = id.trim().toLowerCase(Locale.ROOT);
         for (int i = 0; i < IDS.length; i++) {
-            if (IDS[i].toLowerCase(Locale.ROOT).equals(s)) return i;
+            if (IDS[i].equals(s)) return i;
         }
-        if (s.contains("jiang") || s.contains("cheng") || s.contains("江城")) return 2;
-        if (s.contains("kai") || s.contains("cursive") || s.contains("楷") || "0".equals(s)) return 1;
-        if (s.contains("you") || s.contains("yuan") || s.contains("幼")) return 0;
-        // 旧雅黑 → 幼圆
-        if (s.contains("hei") || s.contains("yahei") || s.contains("sans")) return 0;
+        // 旧配置兼容
+        if (s.contains("kai") || s.contains("cursive") || "0".equals(s)) return 2;
+        if (s.contains("you") || s.contains("yuan")) return 1;
+        if (s.contains("jiang") || s.contains("cheng") || s.contains("江城") || s.contains("hei") || s.contains("yahei") || s.contains("sans") || "1".equals(s)) return 0;
         if (s.contains("song") || s.contains("serif") || s.contains("mono") || s.contains("fang")) return 0;
         return 0;
     }
@@ -68,7 +66,7 @@ public final class SubtitleFontManager {
         return zh ? LABELS_ZH[i] : LABELS_EN[i];
     }
 
-    /** 显示名，用于 ASS FontName / MPV 查找 */
+    /** 显示名，用于 ASS FontName / MPV sub-font 查找 */
     public static String displayNameOf(int index) {
         return labelOf(index, true);
     }
@@ -78,20 +76,38 @@ public final class SubtitleFontManager {
         Typeface cached = TYPEFACE_CACHE.get(id);
         if (cached != null) return cached;
         Typeface tf = loadTypeface(id);
-        if (tf == null && !ID_YOUYUAN.equals(id)) {
-            Log.w(TAG, "load " + id + " failed, fallback to youyuan");
-            tf = loadTypeface(ID_YOUYUAN);
+        if (tf == null && !ID_JIANGCHENG.equals(id)) {
+            Log.w(TAG, "load " + id + " failed, fallback to jiangcheng");
+            tf = loadTypeface(ID_JIANGCHENG);
         }
         if (tf == null) {
-            Log.w(TAG, "load youyuan failed, fallback SANS_SERIF");
+            Log.w(TAG, "load jiangcheng failed, fallback to SANS_SERIF");
             tf = Typeface.SANS_SERIF;
         }
-        TYPEFACE_CACHE.put(id, tf);
+        if (tf != null) TYPEFACE_CACHE.put(id, tf);
         return tf;
     }
 
+    /**
+     * 返回可被 MPV/libass 读取的字体文件路径；失败返回 null。
+     */
     public static File getFontFile(int index) {
-        return ensureFontFile(idOf(index));
+        String id = idOf(index);
+        File cached = FILE_CACHE.get(id);
+        if (cached != null && cached.isFile()) return cached;
+        File f = ensureFontFile(id);
+        if (f == null || !f.isFile()) {
+            if (!ID_JIANGCHENG.equals(id)) {
+                Log.w(TAG, "font file " + id + " missing, try jiangcheng");
+                f = ensureFontFile(ID_JIANGCHENG);
+            }
+        }
+        if (f != null && f.isFile()) {
+            FILE_CACHE.put(id, f);
+            return f;
+        }
+        Log.w(TAG, "font file unavailable for " + id);
+        return null;
     }
 
     public static File getFontsDir() {
@@ -104,99 +120,78 @@ public final class SubtitleFontManager {
         }
     }
 
-    public static String getFontsDirPath() {
-        File dir = getFontsDir();
-        return dir != null ? dir.getAbsolutePath() : "";
-    }
-
+    /** 预解压全部内置字体到 filesDir，供 MPV sub-fonts-dir */
     public static void prepareAllFonts() {
-        for (int i = 0; i < IDS.length; i++) {
+        for (String id : IDS) {
             try {
-                File f = ensureFontFile(IDS[i]);
-                if (f != null) writeAlias(f, LABELS_ZH[i]);
+                ensureFontFile(id);
             } catch (Throwable e) {
-                Log.w(TAG, "prepare " + IDS[i] + ": " + e.getMessage());
+                Log.w(TAG, "prepare " + id + ": " + e.getMessage());
             }
+        }
+        try {
+            createAliases();
+        } catch (Throwable e) {
+            Log.w(TAG, "aliases: " + e.getMessage());
         }
     }
 
-    private static void writeAlias(File src, String aliasName) {
-        if (src == null || !src.exists() || aliasName == null || aliasName.isEmpty()) return;
-        try {
-            File dir = src.getParentFile();
-            if (dir == null) return;
-            // 幼圆.ttf / 楷体.ttf / 江城圆体.ttf，供 libass 按中文 FontName 命中
-            File alias = new File(dir, aliasName + ".ttf");
-            if (alias.exists() && alias.length() == src.length()) return;
-            try (InputStream in = new FileInputStream(src); FileOutputStream out = new FileOutputStream(alias)) {
+    /** libass 常按中文族名查找：复制别名文件 江城圆体.ttf / 幼圆.ttf / 楷体.ttf */
+    private static void createAliases() {
+        File dir = getFontsDir();
+        if (dir == null) return;
+        String[][] pairs = new String[][]{
+                {ID_JIANGCHENG, "江城圆体"},
+                {ID_YOUYUAN, "幼圆"},
+                {ID_KAITI, "楷体"},
+                {ID_JIANGCHENG, "JiangCheng"},
+                {ID_JIANGCHENG, "JiangChengYuan"},
+                {ID_YOUYUAN, "YouYuan"},
+                {ID_KAITI, "KaiTi"},
+                {ID_KAITI, "STKaiti"},
+        };
+        for (String[] p : pairs) {
+            File src = ensureFontFile(p[0]);
+            if (src == null || !src.isFile()) continue;
+            File dst = new File(dir, p[1] + ".ttf");
+            if (dst.isFile() && dst.length() == src.length()) continue;
+            try (java.io.FileInputStream in = new java.io.FileInputStream(src);
+                 java.io.FileOutputStream out = new java.io.FileOutputStream(dst)) {
                 byte[] buf = new byte[8192];
                 int n;
                 while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            } catch (Throwable e) {
+                Log.w(TAG, "alias " + p[1] + ": " + e.getMessage());
             }
-            Log.i(TAG, "alias " + alias.getName() + " from " + src.getName());
-        } catch (Throwable e) {
-            Log.w(TAG, "alias " + aliasName + ": " + e.getMessage());
         }
     }
 
     private static Typeface loadTypeface(String id) {
         try {
-            File f = ensureFontFile(id);
-            if (f != null && f.exists() && f.length() > 0) {
-                return Typeface.createFromFile(f);
-            }
-        } catch (Throwable e) {
-            Log.w(TAG, "createFromFile " + id + ": " + e.getMessage());
-        }
-        try {
             Context ctx = App.get();
-            for (String name : assetCandidates(id)) {
+            if (ctx == null) return null;
+            // 1) assets
+            for (String assetPath : assetCandidates(id)) {
                 try {
-                    return Typeface.createFromAsset(ctx.getAssets(), name);
-                } catch (Throwable ignored) {
-                }
-            }
-        } catch (Throwable e) {
-            Log.w(TAG, "createFromAsset " + id + ": " + e.getMessage());
-        }
-        return null;
-    }
-
-    private static File ensureFontFile(String id) {
-        File cached = FILE_CACHE.get(id);
-        if (cached != null && cached.exists() && cached.length() > 0) return cached;
-        try {
-            File dir = getFontsDir();
-            if (dir == null) return null;
-            for (String name : fileNameCandidates(id)) {
-                File out = new File(dir, name);
-                if (out.exists() && out.length() > 0) {
-                    FILE_CACHE.put(id, out);
-                    return out;
-                }
-            }
-            Context ctx = App.get();
-            for (String asset : assetCandidates(id)) {
-                try (InputStream in = ctx.getAssets().open(asset)) {
-                    String base = asset.contains("/") ? asset.substring(asset.lastIndexOf('/') + 1) : asset;
-                    if (!base.contains(".")) base = id + ".ttf";
-                    File out = new File(dir, base);
-                    try (FileOutputStream fos = new FileOutputStream(out)) {
-                        byte[] buf = new byte[8192];
-                        int n;
-                        while ((n = in.read(buf)) > 0) fos.write(buf, 0, n);
-                    }
-                    if (out.length() > 0) {
-                        FILE_CACHE.put(id, out);
-                        Log.i(TAG, "extracted " + out.getAbsolutePath() + " len=" + out.length());
-                        return out;
+                    Typeface tf = Typeface.createFromAsset(ctx.getAssets(), assetPath);
+                    if (tf != null) {
+                        Log.i(TAG, "loaded typeface from assets/" + assetPath);
+                        return tf;
                     }
                 } catch (Throwable ignored) {
                 }
             }
-            Log.w(TAG, "ensureFontFile miss id=" + id);
+            // 2) extracted file
+            File f = ensureFontFile(id);
+            if (f != null && f.isFile()) {
+                Typeface tf = Typeface.createFromFile(f);
+                if (tf != null) {
+                    Log.i(TAG, "loaded typeface from file " + f.getAbsolutePath());
+                    return tf;
+                }
+            }
         } catch (Throwable e) {
-            Log.w(TAG, "ensureFontFile " + id + ": " + e.getMessage());
+            Log.w(TAG, "loadTypeface " + id + ": " + e.getMessage());
         }
         return null;
     }
@@ -205,13 +200,47 @@ public final class SubtitleFontManager {
         return new String[]{
                 "fonts/" + id + ".ttf",
                 "fonts/" + id + ".otf",
+                "fonts/" + id + ".TTC",
+                "fonts/" + id + ".ttc",
                 "fonts/" + id,
-                "fonts/" + id + ".TTF",
-                "fonts/" + id + ".OTF",
+                id + ".ttf",
+                id + ".otf",
+                id
         };
     }
 
-    private static String[] fileNameCandidates(String id) {
-        return new String[]{id + ".ttf", id + ".otf", id, id + ".TTF", id + ".OTF"};
+    private static File ensureFontFile(String id) {
+        try {
+            File dir = getFontsDir();
+            if (dir == null) return null;
+            // already extracted?
+            for (String ext : new String[]{".ttf", ".otf", ".ttc", ""}) {
+                File existing = new File(dir, id + ext);
+                if (existing.isFile() && existing.length() > 1000) return existing;
+            }
+            Context ctx = App.get();
+            if (ctx == null) return null;
+            for (String assetPath : assetCandidates(id)) {
+                try (InputStream in = ctx.getAssets().open(assetPath)) {
+                    String name = assetPath.contains(".") ? new File(assetPath).getName() : id + ".ttf";
+                    if (!name.contains(".")) name = id + ".ttf";
+                    File out = new File(dir, name);
+                    try (FileOutputStream fos = new FileOutputStream(out)) {
+                        byte[] buf = new byte[8192];
+                        int n;
+                        while ((n = in.read(buf)) > 0) fos.write(buf, 0, n);
+                        fos.flush();
+                    }
+                    if (out.isFile() && out.length() > 1000) {
+                        Log.i(TAG, "extracted " + assetPath + " -> " + out.getAbsolutePath());
+                        return out;
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+        } catch (Throwable e) {
+            Log.w(TAG, "ensureFontFile " + id + ": " + e.getMessage());
+        }
+        return null;
     }
 }

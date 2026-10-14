@@ -1,4 +1,4 @@
-Put font files here (any of these names work):
+Place font files here:
+  jiangcheng.ttf / jiangcheng.otf / jiangcheng
   youyuan.ttf / youyuan.otf / youyuan
   kaiti.ttf / kaiti.otf / kaiti
-  jiangcheng400W.ttf / jiangcheng400W.otf / jiangcheng400W
