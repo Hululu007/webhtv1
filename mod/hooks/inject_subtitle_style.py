@@ -117,18 +117,29 @@ def patch_exo(path: Path) -> None:
         return
     t = path.read_text(encoding="utf-8")
     orig = t
-    if "com.fongmi.android.tv.setting.Setting" not in t:
+    if "import com.fongmi.android.tv.setting.Setting;" not in t:
         t = t.replace(
             "import com.fongmi.android.tv.setting.PlayerSetting;",
             "import com.fongmi.android.tv.setting.PlayerSetting;\nimport com.fongmi.android.tv.setting.Setting;",
         )
+    # 关闭内封样式，否则 ASS 自带颜色/字体会盖掉个性设置（手机/TV 共用 ExoUtil）
     t = t.replace(
         "view.getSubtitleView().setApplyEmbeddedStyles(true);",
         "view.getSubtitleView().setApplyEmbeddedStyles(false);",
     )
+    t = t.replace(
+        "view.getSubtitleView().setApplyEmbeddedStyles(PlayerSetting.isCaption());",
+        "view.getSubtitleView().setApplyEmbeddedStyles(false);",
+    )
+    # 顺序：先关 embedded，再 setStyle
+    t = t.replace(
+        "view.getSubtitleView().setStyle(getCaptionStyle());\n        view.getSubtitleView().setApplyEmbeddedStyles(false);",
+        "view.getSubtitleView().setApplyEmbeddedStyles(false);\n        view.getSubtitleView().setStyle(getCaptionStyle());",
+    )
     pat = re.compile(r"public static CaptionStyleCompat getCaptionStyle\(\)\s*\{[^}]*\}", re.S)
     if pat.search(t):
         t = pat.sub(EXO_CAPTION_STYLE, t, count=1)
+        print("[mod] getCaptionStyle replaced")
     else:
         print("[mod] WARN: getCaptionStyle not found")
     if t != orig:
@@ -136,6 +147,7 @@ def patch_exo(path: Path) -> None:
         print("[mod] patched", path)
     else:
         print("[mod] no change", path)
+
 
 
 def patch_mpv_player(path: Path) -> None:
