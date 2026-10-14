@@ -64,9 +64,6 @@ public class SettingPersonalActivity extends BaseActivity {
         mBinding.searchThread.setOnClickListener(this::setSearchThread);
         mBinding.subtitleAutoMatch.setOnClickListener(this::setSubtitleAutoMatch);
         mBinding.subtitleLanguage.setOnClickListener(this::setSubtitleLanguage);
-        mBinding.homeSiteLock.setOnClickListener(this::setHomeSiteLock);
-        mBinding.homeVodAutoLoad.setOnClickListener(this::setHomeVodAutoLoad);
-        mBinding.homeHistory.setOnClickListener(this::setHomeHistory);
         try { mBinding.childLock.setOnClickListener(this::setChildLock); } catch (Throwable ignored) {}
         try { mBinding.homePush.setOnClickListener(this::setHomePush); } catch (Throwable ignored) {}
         try { mBinding.playDirect.setOnClickListener(this::setPlayDirect); } catch (Throwable ignored) {}
@@ -113,9 +110,6 @@ public class SettingPersonalActivity extends BaseActivity {
             }
         }
         mBinding.subtitleLanguageText.setText(label);
-        mBinding.homeSiteLockText.setText(getSwitch(Setting.isHomeSiteLock()));
-        mBinding.homeVodAutoLoadText.setText(getSwitch(Setting.isHomeVodAutoLoad()));
-        mBinding.homeHistoryText.setText(getSwitch(Setting.isHomeHistory()));
         try { mBinding.childLockText.setText(getSwitch(Setting.isChildLockEnabled())); } catch (Throwable ignored) {}
         try { mBinding.homePushText.setText(getSwitch(Setting.isHomePush())); } catch (Throwable ignored) {}
         try { mBinding.playDirectText.setText(getSwitch(Setting.isPlayDirect())); } catch (Throwable ignored) {}
@@ -202,6 +196,7 @@ public class SettingPersonalActivity extends BaseActivity {
 
     private void setSubtitleColor(View view) {
         Setting.cycleSubtitleColor();
+        try { com.fongmi.android.tv.subtitle.AssrtSubtitleMatch.notifySubtitleStyleChanged(); } catch (Throwable ignored) {}
         refreshTexts();
     }
 
@@ -256,20 +251,8 @@ public class SettingPersonalActivity extends BaseActivity {
         refreshTexts();
     }
 
-    private void setHomeSiteLock(View view) {
-        Setting.putHomeSiteLock(!Setting.isHomeSiteLock());
-        refreshTexts();
-    }
 
-    private void setHomeVodAutoLoad(View view) {
-        Setting.putHomeVodAutoLoad(!Setting.isHomeVodAutoLoad());
-        refreshTexts();
-    }
 
-    private void setHomeHistory(View view) {
-        Setting.putHomeHistory(!Setting.isHomeHistory());
-        refreshTexts();
-    }
 
     private void setHomePush(View view) {
         Setting.putHomePush(!Setting.isHomePush());
