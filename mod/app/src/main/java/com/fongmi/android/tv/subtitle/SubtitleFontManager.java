@@ -93,14 +93,19 @@ public final class SubtitleFontManager {
         return ensureFontFile(idOf(index));
     }
 
-    public static String getFontsDirPath() {
+    public static File getFontsDir() {
         try {
             File dir = new File(App.get().getFilesDir(), "subtitle_fonts");
             if (!dir.exists()) dir.mkdirs();
-            return dir.getAbsolutePath();
+            return dir;
         } catch (Throwable e) {
-            return "";
+            return null;
         }
+    }
+
+    public static String getFontsDirPath() {
+        File dir = getFontsDir();
+        return dir != null ? dir.getAbsolutePath() : "";
     }
 
     public static void prepareAllFonts() {
