@@ -88,6 +88,11 @@ public class SiteAdapter extends RecyclerView.Adapter<SiteAdapter.ViewHolder> {
         return mItems;
     }
 
+    public int getSelectedPosition() {
+        for (int i = 0; i < mItems.size(); i++) if (mItems.get(i).isSelected()) return i;
+        return 0;
+    }
+
     public int getTotalCount() {
         return mItems.size();
     }

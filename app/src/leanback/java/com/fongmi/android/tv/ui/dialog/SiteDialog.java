@@ -163,7 +163,9 @@ public class SiteDialog extends BaseAlertDialog implements SiteAdapter.OnClickLi
         listLoaded = true;
         long start = System.currentTimeMillis();
         adapter = new SiteAdapter(this);
-        adapter.setDisplayLimit(INITIAL_BATCH);
+        int selectedPosition = adapter.getSelectedPosition();
+        int selectedRowEnd = (selectedPosition / getCount() + 1) * getCount();
+        adapter.setDisplayLimit(Math.max(INITIAL_BATCH, selectedRowEnd));
         log("adapter created cost=%sms items=%s action=%s immediate=%s", cost(start), adapter.getTotalCount(), action, immediate);
         if (adapter.getTotalCount() == 0) {
             log("dismiss empty total=%sms", cost());
@@ -176,6 +178,7 @@ public class SiteDialog extends BaseAlertDialog implements SiteAdapter.OnClickLi
         setRecyclerHeight(adapter.getItemCount());
         setMode();
         setActionEnabled(true);
+        binding.recycler.scrollToPosition(selectedPosition);
         log("view configured cost=%sms total=%sms", cost(layoutStart), cost());
         runAfterFirstPreDraw("list preDraw", () -> {
             if (adapter != null) adapter.showAll();
