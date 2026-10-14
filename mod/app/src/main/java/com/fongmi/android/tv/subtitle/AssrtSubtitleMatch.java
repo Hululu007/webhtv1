@@ -265,8 +265,11 @@ public final class AssrtSubtitleMatch {
             com.fongmi.android.tv.subtitle.SubtitleFontManager.prepareAllFonts();
         } catch (Throwable ignored) {
         }
-        // 无全局 Player 引用时仅准备字体；播放中由 onPlayerReady / applyToPlayer 延迟路径生效
-        Log.i(TAG, "notifySubtitleStyleChanged font prepared");
+        try {
+            com.fongmi.android.tv.event.RefreshEvent.subtitle();
+        } catch (Throwable ignored) {
+        }
+        Log.i(TAG, "notifySubtitleStyleChanged font prepared + subtitle refresh");
     }
 
     public static void applyMpvSubtitleStyle(PlayerManager player) {

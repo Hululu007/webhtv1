@@ -1,4 +1,2 @@
-Place font files here (any of these names work):
-  yahei.ttf / yahei.otf / yahei
-  youyuan.ttf / youyuan.otf / youyuan
-  kaiti.ttf / kaiti.otf / kaiti
+Place: youyuan / kaiti / jiangcheng400W (.ttf/.otf)
+Synced from mod/fonts/ at apply time.

@@ -1021,16 +1021,23 @@ public class Setting {
      * 仍用 subtitle_font_index；旧 0~4 会映射到三选一。
      */
     public static int getSubtitleFontIndex() {
-        int v = Prefers.getInt("subtitle_font_index", 1); // 默认幼圆
-        // 旧版 5 档 → 新 3 档
-        if (v < 0) v = 0;
-        if (v > 2) {
-            // 旧：0楷 1黑 2宋 3仿 4等宽
-            if (v == 0) v = 2; // 楷体
-            else if (v == 1 || v == 4) v = 0; // 黑/等宽 → 雅黑
-            else v = 0; // 宋/仿 → 雅黑
-            try { Prefers.put("subtitle_font_index", v); } catch (Throwable ignored) {}
+        // 新顺序：0幼圆 1楷体 2江城圆体（已移除雅黑）
+        try {
+            if (!Prefers.getBoolean("subtitle_font_migrated_v3", false)) {
+                int raw = Prefers.getInt("subtitle_font_index", 0);
+                int v;
+                // 旧顺序 0雅黑 1幼圆 2楷体 → 新 0幼圆 1楷体 2江城
+                if (raw == 1) v = 0;       // 幼圆
+                else if (raw == 2) v = 1;  // 楷体
+                else if (raw == 0) v = 0;  // 雅黑或默认 → 幼圆
+                else v = 0;
+                Prefers.put("subtitle_font_index", v);
+                Prefers.put("subtitle_font_migrated_v3", true);
+                return SubtitleFontManager.normalizeIndex(v);
+            }
+        } catch (Throwable ignored) {
         }
+        int v = Prefers.getInt("subtitle_font_index", 0); // 默认幼圆
         return SubtitleFontManager.normalizeIndex(v);
     }
 
@@ -1071,7 +1078,7 @@ public class Setting {
             return SubtitleFontManager.labelOf(getSubtitleFontIndex(), zh);
         } catch (Throwable ignored) {
         }
-        return zh ? "雅黑" : "YaHei";
+        return zh ? "幼圆" : "YouYuan";
     }
 
     public static int getExitClearCacheGb() {

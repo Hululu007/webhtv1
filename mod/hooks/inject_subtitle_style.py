@@ -8,15 +8,12 @@ ROOT = Path(sys.argv[1] if len(sys.argv) > 1 else ".")
 
 EXO_CAPTION_STYLE = """
 public static CaptionStyleCompat getCaptionStyle() {
-        if (PlayerSetting.isCaption()) {
-            return CaptionStyleCompat.createFromCaptionStyle(((CaptioningManager) App.get().getSystemService(Context.CAPTIONING_SERVICE)).getUserStyle());
-        }
-        int fg = Setting.getSubtitleColorArgb();
+        // 始终用个性设置的颜色/字体；内封 ASS 也不再被系统 Caption 覆盖
+        int fg = Color.WHITE;
+        try { fg = Setting.getSubtitleColorArgb(); } catch (Throwable ignored) {}
         android.graphics.Typeface tf = null;
-        try {
-            tf = Setting.getSubtitleTypeface();
-        } catch (Throwable ignored) {
-        }
+        try { tf = Setting.getSubtitleTypeface(); } catch (Throwable ignored) {}
+        if (tf == null) tf = android.graphics.Typeface.SANS_SERIF;
         return new CaptionStyleCompat(fg, Color.TRANSPARENT, Color.TRANSPARENT, CaptionStyleCompat.EDGE_TYPE_OUTLINE, Color.BLACK, tf);
     }
 """.strip()
@@ -123,7 +120,7 @@ def patch_exo(path: Path) -> None:
         )
     t = t.replace(
         "view.getSubtitleView().setApplyEmbeddedStyles(true);",
-        "view.getSubtitleView().setApplyEmbeddedStyles(PlayerSetting.isCaption());",
+        "view.getSubtitleView().setApplyEmbeddedStyles(false);",
     )
     pat = re.compile(r"public static CaptionStyleCompat getCaptionStyle\(\)\s*\{[^}]*\}", re.S)
     if pat.search(t):
@@ -337,8 +334,41 @@ def main() -> None:
     patch_mpv_player(mpv)
     patch_mpv_options_apply(mpv)
     patch_ass_policy(ROOT / "app/src/main/java/com/fongmi/android/tv/player/mpv/MpvSubtitleStylePolicy.java")
+    ensure_refresh_subtitle(ROOT / "app/src/main/java/com/fongmi/android/tv/event/RefreshEvent.java")
     print("[mod] inject_subtitle_style done")
 
 
 if __name__ == "__main__":
     main()
+
+
+def ensure_refresh_subtitle(path: Path) -> None:
+    if not path.exists():
+        return
+    text = path.read_text(encoding="utf-8")
+    if "public static void subtitle()" in text:
+        print("[mod] RefreshEvent.subtitle already")
+        return
+    if "public static void player()" in text and "subtitle()" not in text:
+        text = text.replace(
+            """    public static void player() {
+        EventBus.getDefault().post(new RefreshEvent(Type.PLAYER));
+    }
+""",
+            """    public static void player() {
+        EventBus.getDefault().post(new RefreshEvent(Type.PLAYER));
+    }
+
+    public static void subtitle() {
+        EventBus.getDefault().post(new RefreshEvent(Type.SUBTITLE));
+    }
+""",
+            1,
+        )
+        path.write_text(text, encoding="utf-8")
+        print("[mod] RefreshEvent.subtitle added")
+    else:
+        print("[mod] WARN RefreshEvent.subtitle not added")
+
+
+ensure_refresh_subtitle(ROOT / "app/src/main/java/com/fongmi/android/tv/event/RefreshEvent.java")
