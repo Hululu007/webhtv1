@@ -1021,7 +1021,7 @@ public class Setting {
      * 仍用 subtitle_font_index；旧 0~4 会映射到三选一。
      */
     public static int getSubtitleFontIndex() {
-        int v = Prefers.getInt("subtitle_font_index", 0); // 默认雅黑
+        int v = Prefers.getInt("subtitle_font_index", 1); // 默认幼圆
         // 旧版 5 档 → 新 3 档
         if (v < 0) v = 0;
         if (v > 2) {
