@@ -75,7 +75,7 @@ public class UpdateDialog extends BaseAlertDialog {
 
     @Override
     protected MaterialAlertDialogBuilder getBuilder() {
-        return new MaterialAlertDialogBuilder(requireActivity(), R.style.ThemeOverlay_WebHTV_LightDialog_NoInset).setView(getBinding().getRoot()).setCancelable(false);
+        return new MaterialAlertDialogBuilder(requireActivity(), R.style.ThemeOverlay_WebHTV_LightDialog).setView(getBinding().getRoot()).setCancelable(false);
     }
 
     @Override
@@ -307,8 +307,9 @@ public class UpdateDialog extends BaseAlertDialog {
      */
     private void applyFullscreenInset() {
         View root = binding.getRoot();
-        if (Boolean.TRUE.equals(root.getTag(R.id.update_fullscreen_inset))) return;
-        root.setTag(R.id.update_fullscreen_inset, Boolean.TRUE);
+        // 不用 R.id（部分 fork 无 update_fullscreen_inset 资源）
+        if ("update_fullscreen_inset".equals(root.getTag())) return;
+        root.setTag("update_fullscreen_inset");
         int inset = ResUtil.dp2px(FULLSCREEN_INSET_DP);
         root.setPadding(
                 root.getPaddingLeft() + inset,
