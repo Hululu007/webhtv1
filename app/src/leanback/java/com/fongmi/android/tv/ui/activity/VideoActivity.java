@@ -746,7 +746,10 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
             @Override
             public void onChildViewHolderSelected(@NonNull RecyclerView parent, @Nullable RecyclerView.ViewHolder child, int position, int subposition) {
                 int count = mEpisodeAdapter.getItemCount();
-                if (count > getEpisodeSegmentSize(count) && position > 1) scrollToEpisode(mArrayAdapter.getStart(position));
+                if (child == null || !parent.hasFocus() || count <= getEpisodeSegmentSize(count) || position <= 1) return;
+                int start = mArrayAdapter.getStart(position);
+                int current = mEpisodeAdapter.getPosition();
+                scrollToEpisode(current >= start && current < start + getEpisodeSegmentSize(count) ? current : start);
             }
         });
     }
@@ -1308,7 +1311,7 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
         Episode episode = getMark().isEmpty() ? flag.find(mHistory.getEpisode(), true) : flag.find(mHistory.getVodRemarks(), false);
         setQualityVisible(episode != null && episode.isSelected() && mQualityAdapter.getItemCount() > 1);
         if (episode == null || episode.isSelected()) return;
-        selectEpisode(episode, false);
+        selectEpisode(episode, true);
     }
 
     @Override
@@ -1324,7 +1327,7 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
         if (newPosition == RecyclerView.NO_POSITION) newPosition = mEpisodeAdapter.getSelectedPosition();
         mEpisodeAdapter.notifySelectionChanged(oldPosition, newPosition);
         SpiderDebug.log("video-episode", "select old=%s new=%s focus=%s scroll=%s name=%s", oldPosition, newPosition, mBinding.episode.hasFocus(), scrollToEpisode, item.getName());
-        if (scrollToEpisode && !mBinding.episode.hasFocus()) scrollToEpisode(newPosition);
+        if (scrollToEpisode && (!mBinding.episode.hasFocus() || mBinding.episode.getSelectedPosition() != newPosition)) scrollToCurrentEpisode();
         if (isFullscreen()) Notify.show(getString(R.string.play_ready, item.getName()));
         onRefresh();
     }
@@ -1350,6 +1353,8 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
     }
 
     private void scrollToCurrentEpisode() {
+        int segment = getEpisodeSegmentSize(mEpisodeAdapter.getItemCount());
+        if (mEpisodeAdapter.getItemCount() > segment) mBinding.array.setSelectedPosition(mEpisodeAdapter.getPosition() / segment + 2);
         scrollToEpisode(mEpisodeAdapter.getPosition());
     }
 
@@ -1533,6 +1538,7 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
             mBinding.video.setLayoutParams(mFrameParams);
         }
         getFocus1().requestFocus();
+        scrollToCurrentEpisode();
         mKeyDown.setFull(false);
         setFullscreen(false);
         mFocus2 = null;

@@ -108,7 +108,7 @@ public class EpisodeListDialog extends BaseAlertDialog implements FlagAdapter.On
         binding.array.addOnChildViewHolderSelectedListener(new androidx.leanback.widget.OnChildViewHolderSelectedListener() {
             @Override
             public void onChildViewHolderSelected(@NonNull RecyclerView parent, @Nullable RecyclerView.ViewHolder child, int position, int subposition) {
-                if (child != null && position >= 0 && position < segmentStarts.size()) scrollToEpisode(segmentStarts.get(position), false);
+                if (child != null && parent.hasFocus() && position >= 0 && position < segmentStarts.size()) scrollToEpisode(getEpisodePositionForSegment(position), false);
             }
         });
     }
@@ -195,8 +195,15 @@ public class EpisodeListDialog extends BaseAlertDialog implements FlagAdapter.On
 
     private void focusEpisodeFromArray() {
         int position = binding.array.getSelectedPosition();
-        int start = position >= 0 && position < segmentStarts.size() ? segmentStarts.get(position) : episodeAdapter.getPosition();
-        focusPosition(binding.episode, start);
+        int target = position >= 0 && position < segmentStarts.size() ? getEpisodePositionForSegment(position) : episodeAdapter.getPosition();
+        focusPosition(binding.episode, target);
+    }
+
+    private int getEpisodePositionForSegment(int position) {
+        int start = segmentStarts.get(position);
+        int end = position + 1 < segmentStarts.size() ? segmentStarts.get(position + 1) : episodeAdapter.getItemCount();
+        int current = episodeAdapter.getPosition();
+        return current >= start && current < end ? current : start;
     }
 
     private void focusFlag() {

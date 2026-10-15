@@ -1458,6 +1458,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         Flag flag = getFlag();
         if (mFlagAdapter != null) mFlagAdapter.toggle(item);
         if (flag != null) setEpisodeAdapter(flag.getEpisodes());
+        scrollEpisodeToSelected();
         applyAudioQueueMetadata(item);
         if (isFullscreen()) Notify.show(getString(R.string.play_ready, item.getName()));
         onRefresh();
