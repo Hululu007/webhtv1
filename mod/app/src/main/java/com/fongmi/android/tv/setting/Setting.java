@@ -1017,19 +1017,29 @@ public class Setting {
     }
 
     /**
-     * 字幕字体：内置 jiangcheng/youyuan/kaiti（江城圆体/幼圆/楷体）。
-     * 仍用 subtitle_font_index；旧 0~4 会映射到三选一。
+     * 字幕字体：系统默认 / 江城圆体 / 幼圆 / 楷体。
+     * index: 0=系统默认, 1=江城, 2=幼圆(默认), 3=楷体。
+     * 旧 3 档配置会一次性 +1 迁移；默认仍为幼圆。
      */
     public static int getSubtitleFontIndex() {
-        int v = Prefers.getInt("subtitle_font_index", 1); // 默认幼圆
-        // 旧版 5 档 → 新 3 档
+        int v = Prefers.getInt("subtitle_font_index", 2); // 默认幼圆 (新 index 2)
         if (v < 0) v = 0;
-        if (v > 2) {
-            // 旧：0楷 1黑 2宋 3仿 4等宽
-            if (v == 0) v = 2; // 楷体
-            else if (v == 1 || v == 4) v = 0; // 黑/等宽 → 雅黑
-            else v = 0; // 宋/仿 → 雅黑
-            try { Prefers.put("subtitle_font_index", v); } catch (Throwable ignored) {}
+        // 一次性迁移：旧 3 档 (0江城 1幼圆 2楷体) → 新 4 档 (+1)
+        boolean migrated = Prefers.getBoolean("subtitle_font_index_v2", false);
+        if (!migrated) {
+            if (v >= 0 && v <= 2) {
+                v = v + 1;
+                try { Prefers.put("subtitle_font_index", v); } catch (Throwable ignored) {}
+            }
+            // 更早的 5 档残留
+            if (v > 3) {
+                // 旧：0楷 1黑 2宋 3仿 4等宽 → 映射到新档
+                if (v == 0) v = 3;              // 楷体
+                else if (v == 1 || v == 4) v = 1; // 黑/等宽 → 江城
+                else v = 1;                     // 宋/仿 → 江城
+                try { Prefers.put("subtitle_font_index", v); } catch (Throwable ignored) {}
+            }
+            try { Prefers.put("subtitle_font_index_v2", true); } catch (Throwable ignored) {}
         }
         return SubtitleFontManager.normalizeIndex(v);
     }
@@ -1042,20 +1052,20 @@ public class Setting {
         putSubtitleFontIndex((getSubtitleFontIndex() + 1) % SubtitleFontManager.count());
     }
 
-    /** 稳定 ID：jiangcheng / youyuan / kaiti */
+    /** 稳定 ID：system / jiangcheng / youyuan / kaiti */
     public static String getSubtitleFontId() {
         return SubtitleFontManager.idOf(getSubtitleFontIndex());
     }
 
     /**
-     * MPV sub-font：优先中文族名（与 TTF 内部名接近），否则用 id。
+     * MPV sub-font：优先中文族名（与 TTF 内部名接近），系统默认返回 sans-serif。
      */
     public static String getSubtitleFontFamily() {
         try {
             return SubtitleFontManager.displayNameOf(getSubtitleFontIndex());
         } catch (Throwable ignored) {
         }
-        return SubtitleFontManager.idOf(0);
+        return "sans-serif";
     }
 
     public static android.graphics.Typeface getSubtitleTypeface() {
