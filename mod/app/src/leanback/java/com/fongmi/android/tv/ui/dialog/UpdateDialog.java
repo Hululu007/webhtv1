@@ -174,7 +174,8 @@ public class UpdateDialog extends BaseAlertDialog {
             binding.stableDesc.setText(MarkdownText.render(getBody(update), getString(R.string.update_no_notes)));
             binding.stableConfirm.setEnabled(update != null && update.hasUpdate());
             binding.stableConfirm.setText(R.string.update_confirm);
-            binding.stableConfirm.setVisibility(View.GONE);
+            // TV：底部 cancel 易被裁切，把「更新」放进展开内容区，保证看得到、点得到
+            binding.stableConfirm.setVisibility(update != null && update.hasUpdate() ? View.VISIBLE : View.GONE);
         } else {
             binding.betaVersion.setText(getVersion(update));
             binding.betaStatus.setText(getStatus(update));
@@ -183,7 +184,7 @@ public class UpdateDialog extends BaseAlertDialog {
             binding.betaDesc.setText(MarkdownText.render(getBody(update), getString(R.string.update_no_notes)));
             binding.betaConfirm.setEnabled(update != null && update.hasUpdate());
             binding.betaConfirm.setText(R.string.update_confirm);
-            binding.betaConfirm.setVisibility(View.GONE);
+            binding.betaConfirm.setVisibility(update != null && update.hasUpdate() ? View.VISIBLE : View.GONE);
         }
     }
 
@@ -214,7 +215,8 @@ public class UpdateDialog extends BaseAlertDialog {
     }
 
     private void updateFocusLinks() {
-        int nextAfterStable = hasBeta() ? R.id.betaItem : R.id.cancel;
+        int nextAfterStable = hasBeta() ? R.id.betaItem
+                : (binding.stableConfirm.getVisibility() == View.VISIBLE ? R.id.stableConfirm : R.id.cancel);
         binding.close.setFocusable(true);
         binding.close.setNextFocusUpId(R.id.close);
         binding.close.setNextFocusLeftId(R.id.close);
@@ -303,9 +305,9 @@ public class UpdateDialog extends BaseAlertDialog {
      * listScroll 带 layout_weight 吃掉剩余空间，progressPanel 和 cancel 作为固定高子项永远保住。
      */
     /**
-     * 自适应窗口：宽/高不超过屏幕安全区，居中，不铺满全屏。
-     * 高度给确定值（而非 wrap_content），内部 listScroll 的 weight 才能生效，
-     * 长更新说明在中间滚动，底部「更新」按钮始终完整可见。
+     * 自适应窗口：居中、不超过屏的 90%×88%，不出屏。
+     * 并强制 listScroll 吃剩余高度（weight=1），底部 cancel 固定可见；
+     * 同时内容区 stableConfirm 在有更新时显示，双保险。
      */
     private void configureWindow() {
         Window window = getDialog() == null ? null : getDialog().getWindow();
@@ -316,33 +318,59 @@ public class UpdateDialog extends BaseAlertDialog {
         } catch (Throwable e) {
             dm = getResources().getDisplayMetrics();
         }
-        // 左右留边约 86% 宽；上下留 overscan 约 82% 高，保证不出屏
-        int maxW = Math.max(ResUtil.dp2px(320), (int) (dm.widthPixels * 0.86f));
-        int maxH = Math.max(ResUtil.dp2px(280), (int) (dm.heightPixels * 0.82f));
+        int maxW = Math.max(ResUtil.dp2px(360), (int) (dm.widthPixels * 0.90f));
+        int maxH = Math.max(ResUtil.dp2px(320), (int) (dm.heightPixels * 0.88f));
         WindowManager.LayoutParams params = window.getAttributes();
         params.width = maxW;
         params.height = maxH;
         params.gravity = android.view.Gravity.CENTER;
         window.setAttributes(params);
-        // root 填满该窗口，weight 才有参照高度
+
         View root = binding.getRoot();
-        ViewGroup.LayoutParams rootParams = root.getLayoutParams();
-        if (rootParams != null) {
-            rootParams.width = ViewGroup.LayoutParams.MATCH_PARENT;
-            rootParams.height = ViewGroup.LayoutParams.MATCH_PARENT;
-            root.setLayoutParams(rootParams);
-        } else {
-            root.setLayoutParams(new ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        }
-        View parent = root.getParent() instanceof View ? (View) root.getParent() : null;
-        if (parent != null) {
-            ViewGroup.LayoutParams pp = parent.getLayoutParams();
-            if (pp != null) {
-                pp.width = ViewGroup.LayoutParams.MATCH_PARENT;
-                pp.height = ViewGroup.LayoutParams.MATCH_PARENT;
-                parent.setLayoutParams(pp);
+        forceMatchParent(root);
+        if (root.getParent() instanceof View) forceMatchParent((View) root.getParent());
+
+        // 关键 listScroll 用 weight 占满中间，cancel / progressPanel 贴底不被裁
+        try {
+            View scroll = binding.listScroll;
+            ViewGroup.LayoutParams slp = scroll.getLayoutParams();
+            if (slp instanceof android.widget.LinearLayout.LayoutParams) {
+                android.widget.LinearLayout.LayoutParams lp = (android.widget.LinearLayout.LayoutParams) slp;
+                lp.width = ViewGroup.LayoutParams.MATCH_PARENT;
+                lp.height = 0;
+                lp.weight = 1f;
+                scroll.setLayoutParams(lp);
             }
+            ViewGroup.LayoutParams clp = binding.cancel.getLayoutParams();
+            if (clp instanceof android.widget.LinearLayout.LayoutParams) {
+                android.widget.LinearLayout.LayoutParams lp = (android.widget.LinearLayout.LayoutParams) clp;
+                lp.width = ViewGroup.LayoutParams.MATCH_PARENT;
+                lp.height = ViewGroup.LayoutParams.WRAP_CONTENT;
+                lp.weight = 0f;
+                binding.cancel.setLayoutParams(lp);
+            }
+            if (binding.progressPanel.getLayoutParams() instanceof android.widget.LinearLayout.LayoutParams) {
+                android.widget.LinearLayout.LayoutParams lp =
+                        (android.widget.LinearLayout.LayoutParams) binding.progressPanel.getLayoutParams();
+                lp.width = ViewGroup.LayoutParams.MATCH_PARENT;
+                lp.height = ViewGroup.LayoutParams.WRAP_CONTENT;
+                lp.weight = 0f;
+                binding.progressPanel.setLayoutParams(lp);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private void forceMatchParent(View v) {
+        if (v == null) return;
+        ViewGroup.LayoutParams rp = v.getLayoutParams();
+        if (rp != null) {
+            rp.width = ViewGroup.LayoutParams.MATCH_PARENT;
+            rp.height = ViewGroup.LayoutParams.MATCH_PARENT;
+            v.setLayoutParams(rp);
+        } else {
+            v.setLayoutParams(new ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         }
     }
 
