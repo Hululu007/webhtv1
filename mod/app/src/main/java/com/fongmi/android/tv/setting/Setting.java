@@ -1017,9 +1017,9 @@ public class Setting {
     }
 
     /**
-     * 字幕字体：系统默认 / 幼圆 / 楷体 / 黑圆。
-     * index: 0=系统默认, 1=幼圆, 2=楷体, 3=黑圆(默认)。
-     * 旧配置一次性迁移；默认改为黑圆。
+     * 字幕字体：系统默认 / 幼圆 / 楷体 / 黑圆 / 细圆。
+     * index: 0=系统默认, 1=幼圆, 2=楷体, 3=黑圆(默认), 4=细圆。
+     * 旧配置一次性迁移；默认仍为黑圆。
      */
     public static int getSubtitleFontIndex() {
         int v = Prefers.getInt("subtitle_font_index", 3); // 默认黑圆
@@ -1056,7 +1056,7 @@ public class Setting {
         putSubtitleFontIndex((getSubtitleFontIndex() + 1) % SubtitleFontManager.count());
     }
 
-    /** 稳定 ID：system / youyuan / kaiti / heiyuan */
+    /** 稳定 ID：system / youyuan / kaiti / heiyuan / xiyuan */
     public static String getSubtitleFontId() {
         return SubtitleFontManager.idOf(getSubtitleFontIndex());
     }
