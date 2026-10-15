@@ -25,7 +25,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 public class UpdateDialog extends BaseAlertDialog {
 
-    private static final int FULLSCREEN_INSET_DP = 32;
+    private static final int FULLSCREEN_INSET_DP = 16;
 
     private DialogUpdateBinding binding;
     private UpdateListener listener;
@@ -191,6 +191,26 @@ public class UpdateDialog extends BaseAlertDialog {
         Update update = getSelected();
         if (update == null || !update.hasUpdate()) binding.cancel.setText(R.string.about_acknowledge);
         else binding.cancel.setText(hasBeta() ? getString(R.string.update_confirm_channel, getSelectedName()) : getString(R.string.update_confirm));
+        // TV：底部「更新」按钮不能被裁成一条细线，强制可见与最小高度
+        binding.cancel.setVisibility(View.VISIBLE);
+        binding.cancel.setEnabled(true);
+        int minH = ResUtil.dp2px(48);
+        binding.cancel.setMinimumHeight(minH);
+        binding.cancel.setMinHeight(minH);
+        ViewGroup.LayoutParams lp = binding.cancel.getLayoutParams();
+        if (lp != null) {
+            lp.height = ViewGroup.LayoutParams.WRAP_CONTENT;
+            if (lp instanceof ViewGroup.MarginLayoutParams) {
+                ViewGroup.MarginLayoutParams mlp = (ViewGroup.MarginLayoutParams) lp;
+                if (mlp.bottomMargin < ResUtil.dp2px(8)) mlp.bottomMargin = ResUtil.dp2px(8);
+            }
+            binding.cancel.setLayoutParams(lp);
+        }
+        binding.cancel.setPadding(
+                Math.max(binding.cancel.getPaddingLeft(), ResUtil.dp2px(16)),
+                Math.max(binding.cancel.getPaddingTop(), ResUtil.dp2px(12)),
+                Math.max(binding.cancel.getPaddingRight(), ResUtil.dp2px(16)),
+                Math.max(binding.cancel.getPaddingBottom(), ResUtil.dp2px(12)));
     }
 
     private void updateFocusLinks() {
@@ -282,29 +302,50 @@ public class UpdateDialog extends BaseAlertDialog {
      * 每项都有设备差异，任何一项出错就裁掉底部的进度面板和取消按钮。铺满后这些变量全部无关：
      * listScroll 带 layout_weight 吃掉剩余空间，progressPanel 和 cancel 作为固定高子项永远保住。
      */
+    /**
+     * 自适应窗口：宽/高不超过屏幕安全区，居中，不铺满全屏。
+     * 高度给确定值（而非 wrap_content），内部 listScroll 的 weight 才能生效，
+     * 长更新说明在中间滚动，底部「更新」按钮始终完整可见。
+     */
     private void configureWindow() {
         Window window = getDialog() == null ? null : getDialog().getWindow();
         if (window == null) return;
+        android.util.DisplayMetrics dm = new android.util.DisplayMetrics();
+        try {
+            window.getWindowManager().getDefaultDisplay().getMetrics(dm);
+        } catch (Throwable e) {
+            dm = getResources().getDisplayMetrics();
+        }
+        // 左右留边约 86% 宽；上下留 overscan 约 82% 高，保证不出屏
+        int maxW = Math.max(ResUtil.dp2px(320), (int) (dm.widthPixels * 0.86f));
+        int maxH = Math.max(ResUtil.dp2px(280), (int) (dm.heightPixels * 0.82f));
         WindowManager.LayoutParams params = window.getAttributes();
-        params.width = WindowManager.LayoutParams.MATCH_PARENT;
-        params.height = WindowManager.LayoutParams.MATCH_PARENT;
+        params.width = maxW;
+        params.height = maxH;
+        params.gravity = android.view.Gravity.CENTER;
         window.setAttributes(params);
-        // XML 里 root 是 wrap_content，铺满全屏必须显式改成 match_parent，
-        // 否则窗口虽然全屏、内容仍只占中间一小块。
-        ViewGroup.LayoutParams rootParams = binding.getRoot().getLayoutParams();
+        // root 填满该窗口，weight 才有参照高度
+        View root = binding.getRoot();
+        ViewGroup.LayoutParams rootParams = root.getLayoutParams();
         if (rootParams != null) {
             rootParams.width = ViewGroup.LayoutParams.MATCH_PARENT;
             rootParams.height = ViewGroup.LayoutParams.MATCH_PARENT;
-            binding.getRoot().setLayoutParams(rootParams);
+            root.setLayoutParams(rootParams);
+        } else {
+            root.setLayoutParams(new ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        }
+        View parent = root.getParent() instanceof View ? (View) root.getParent() : null;
+        if (parent != null) {
+            ViewGroup.LayoutParams pp = parent.getLayoutParams();
+            if (pp != null) {
+                pp.width = ViewGroup.LayoutParams.MATCH_PARENT;
+                pp.height = ViewGroup.LayoutParams.MATCH_PARENT;
+                parent.setLayoutParams(pp);
+            }
         }
     }
 
-    /**
-     * 电视存在 overscan，正文不能贴边。在 XML 既有 padding 之上再加一圈安全边距。
-     *
-     * 用 tag 记在 root 上而不是记在 Fragment 实例字段上：配置变更（HDMI 分辨率切换、字体缩放）
-     * 后 Fragment 实例保留、binding 却会重新 inflate，实例字段会让新 root 永远拿不到边距。
-     */
     private void applyFullscreenInset() {
         View root = binding.getRoot();
         // 不用 R.id（部分 fork 无 update_fullscreen_inset 资源）
@@ -320,8 +361,20 @@ public class UpdateDialog extends BaseAlertDialog {
 
     private void configureDialogLayout() {
         applyFullscreenInset();
-        binding.getRoot().requestLayout();
         configureWindow();
+        binding.getRoot().requestLayout();
+        // 布局完成后再钉一次底部按钮，防止首帧仍被裁成细线
+        binding.getRoot().post(() -> {
+            try {
+                configureWindow();
+                renderAction();
+                if (binding.cancel.getVisibility() != View.VISIBLE) {
+                    binding.cancel.setVisibility(View.VISIBLE);
+                }
+                binding.cancel.requestLayout();
+            } catch (Throwable ignored) {
+            }
+        });
     }
 
     private String getVersion(Update update) {
