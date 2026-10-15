@@ -13,7 +13,7 @@ import java.util.Locale;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 内置字幕字体：system / jiangcheng / youyuan / kaiti（assets/fonts/）。
+ * 内置字幕字体：system / langyuan / youyuan / kaiti / heiyuan（assets/fonts/）。
  * Mobile / Leanback / Exo / MPV 共用。
  * index 0 = 系统默认（无自定义文件），便于对比是否生效。
  */
@@ -21,14 +21,15 @@ public final class SubtitleFontManager {
 
     private static final String TAG = "SubtitleFont";
     public static final String ID_SYSTEM = "system";
-    public static final String ID_JIANGCHENG = "jiangcheng";
+    public static final String ID_LANGYUAN = "langyuan";
     public static final String ID_YOUYUAN = "youyuan";
     public static final String ID_KAITI = "kaiti";
+    public static final String ID_HEIYUAN = "heiyuan";
 
-    // 0 系统默认, 1 江城, 2 幼圆(默认), 3 楷体
-    private static final String[] IDS = {ID_SYSTEM, ID_JIANGCHENG, ID_YOUYUAN, ID_KAITI};
-    private static final String[] LABELS_ZH = {"系统默认", "江城圆体", "幼圆", "楷体"};
-    private static final String[] LABELS_EN = {"System", "JiangCheng", "YouYuan", "KaiTi"};
+    // 0 系统默认, 1 浪圆, 2 幼圆(默认), 3 楷体, 4 黑圆
+    private static final String[] IDS = {ID_SYSTEM, ID_LANGYUAN, ID_YOUYUAN, ID_KAITI, ID_HEIYUAN};
+    private static final String[] LABELS_ZH = {"系统默认", "浪圆", "幼圆", "楷体", "黑圆"};
+    private static final String[] LABELS_EN = {"System", "LangYuan", "YouYuan", "KaiTi", "HeiYuan"};
 
     private static final ConcurrentHashMap<String, Typeface> TYPEFACE_CACHE = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, File> FILE_CACHE = new ConcurrentHashMap<>();
@@ -52,17 +53,35 @@ public final class SubtitleFontManager {
             if (IDS[i].equals(s)) return i;
         }
         // 系统默认
-        if (s.contains("system") || s.contains("default") || s.contains("sans") || "系统".equals(s) || "系统默认".equals(s)) {
+        if (s.contains("system") || s.contains("default") || s.contains("sans")
+                || "系统".equals(s) || "系统默认".equals(s)) {
             return 0;
         }
-        // 旧配置兼容（旧 3 档：0江城 1幼圆 2楷体 → 新 +1）
-        if (s.contains("kai") || s.contains("cursive")) return 3;
-        if (s.contains("you") || s.contains("yuan")) return 2;
-        if (s.contains("jiang") || s.contains("cheng") || s.contains("江城") || s.contains("hei") || s.contains("yahei")) return 1;
-        if (s.contains("song") || s.contains("serif") || s.contains("mono") || s.contains("fang")) return 1;
+        // 浪圆（含旧名 江城 / jiangcheng）
+        if (s.contains("lang") || s.contains("浪") || s.contains("jiang") || s.contains("cheng")
+                || s.contains("江城") || "jiangcheng".equals(s)) {
+            return 1;
+        }
+        // 幼圆
+        if (s.contains("you") || s.contains("幼") || "youyuan".equals(s)) {
+            return 2;
+        }
+        // 楷体
+        if (s.contains("kai") || s.contains("cursive") || s.contains("楷")) {
+            return 3;
+        }
+        // 黑圆
+        if (s.contains("hei") || s.contains("黑") || s.contains("yahei") || "heiyuan".equals(s)) {
+            return 4;
+        }
+        if (s.contains("song") || s.contains("serif") || s.contains("mono") || s.contains("fang")) {
+            return 1;
+        }
+        // 数字旧值兜底
         if ("0".equals(s)) return 1;
         if ("1".equals(s)) return 2;
         if ("2".equals(s)) return 3;
+        if ("3".equals(s)) return 3;
         return 0;
     }
 
@@ -103,12 +122,13 @@ public final class SubtitleFontManager {
         }
 
         Typeface tf = loadTypeface(id);
-        if (tf == null && !ID_JIANGCHENG.equals(id)) {
-            Log.w(TAG, "load " + id + " failed, fallback to jiangcheng");
-            tf = loadTypeface(ID_JIANGCHENG);
+        // 失败时优先回退到浪圆，再系统
+        if (tf == null && !ID_LANGYUAN.equals(id)) {
+            Log.w(TAG, "load " + id + " failed, fallback to langyuan");
+            tf = loadTypeface(ID_LANGYUAN);
         }
         if (tf == null) {
-            Log.w(TAG, "load jiangcheng failed, fallback to SANS_SERIF");
+            Log.w(TAG, "load langyuan failed, fallback to SANS_SERIF");
             tf = Typeface.SANS_SERIF;
         }
         if (tf != null) TYPEFACE_CACHE.put(id, tf);
@@ -125,9 +145,9 @@ public final class SubtitleFontManager {
         if (cached != null && cached.isFile()) return cached;
         File f = ensureFontFile(id);
         if (f == null || !f.isFile()) {
-            if (!ID_JIANGCHENG.equals(id)) {
-                Log.w(TAG, "font file " + id + " missing, try jiangcheng");
-                f = ensureFontFile(ID_JIANGCHENG);
+            if (!ID_LANGYUAN.equals(id)) {
+                Log.w(TAG, "font file " + id + " missing, try langyuan");
+                f = ensureFontFile(ID_LANGYUAN);
             }
         }
         if (f != null && f.isFile()) {
@@ -165,17 +185,20 @@ public final class SubtitleFontManager {
         }
     }
 
-    /** libass 常按中文族名查找：复制别名文件 江城圆体.ttf / 幼圆.ttf / 楷体.ttf */
+    /** libass 常按中文族名查找：复制别名文件 */
     private static void createAliases() {
         File dir = getFontsDir();
         if (dir == null) return;
         String[][] pairs = new String[][]{
-                {ID_JIANGCHENG, "江城圆体"},
+                {ID_LANGYUAN, "浪圆"},
+                {ID_LANGYUAN, "江城圆体"},
+                {ID_LANGYUAN, "LangYuan"},
+                {ID_LANGYUAN, "JiangCheng"},
                 {ID_YOUYUAN, "幼圆"},
-                {ID_KAITI, "楷体"},
-                {ID_JIANGCHENG, "JiangCheng"},
-                {ID_JIANGCHENG, "JiangChengYuan"},
                 {ID_YOUYUAN, "YouYuan"},
+                {ID_HEIYUAN, "黑圆"},
+                {ID_HEIYUAN, "HeiYuan"},
+                {ID_KAITI, "楷体"},
                 {ID_KAITI, "KaiTi"},
                 {ID_KAITI, "STKaiti"},
         };
@@ -227,6 +250,21 @@ public final class SubtitleFontManager {
     }
 
     private static String[] assetCandidates(String id) {
+        // langyuan 兼容旧文件名 jiangcheng
+        if (ID_LANGYUAN.equals(id)) {
+            return new String[]{
+                    "fonts/langyuan.ttf",
+                    "fonts/langyuan.otf",
+                    "fonts/jiangcheng.ttf",
+                    "fonts/jiangcheng.otf",
+                    "fonts/langyuan",
+                    "fonts/jiangcheng",
+                    "langyuan.ttf",
+                    "jiangcheng.ttf",
+                    "langyuan",
+                    "jiangcheng"
+            };
+        }
         return new String[]{
                 "fonts/" + id + ".ttf",
                 "fonts/" + id + ".otf",
@@ -249,12 +287,21 @@ public final class SubtitleFontManager {
                 File existing = new File(dir, id + ext);
                 if (existing.isFile() && existing.length() > 1000) return existing;
             }
+            // langyuan 也认旧提取名 jiangcheng
+            if (ID_LANGYUAN.equals(id)) {
+                for (String ext : new String[]{".ttf", ".otf", ".ttc", ""}) {
+                    File existing = new File(dir, "jiangcheng" + ext);
+                    if (existing.isFile() && existing.length() > 1000) return existing;
+                }
+            }
             Context ctx = App.get();
             if (ctx == null) return null;
             for (String assetPath : assetCandidates(id)) {
                 try (InputStream in = ctx.getAssets().open(assetPath)) {
                     String name = assetPath.contains(".") ? new File(assetPath).getName() : id + ".ttf";
                     if (!name.contains(".")) name = id + ".ttf";
+                    // 统一写出为 id.ttf，避免 jiangcheng 残留
+                    if (ID_LANGYUAN.equals(id)) name = "langyuan.ttf";
                     File out = new File(dir, name);
                     try (FileOutputStream fos = new FileOutputStream(out)) {
                         byte[] buf = new byte[8192];

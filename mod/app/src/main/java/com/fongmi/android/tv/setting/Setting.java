@@ -1017,8 +1017,8 @@ public class Setting {
     }
 
     /**
-     * 字幕字体：系统默认 / 江城圆体 / 幼圆 / 楷体。
-     * index: 0=系统默认, 1=江城, 2=幼圆(默认), 3=楷体。
+     * 字幕字体：系统默认 / 浪圆 / 幼圆 / 楷体 / 黑圆。
+     * index: 0=系统默认, 1=浪圆, 2=幼圆(默认), 3=楷体, 4=黑圆。
      * 旧 3 档配置会一次性 +1 迁移；默认仍为幼圆。
      */
     public static int getSubtitleFontIndex() {
@@ -1052,7 +1052,7 @@ public class Setting {
         putSubtitleFontIndex((getSubtitleFontIndex() + 1) % SubtitleFontManager.count());
     }
 
-    /** 稳定 ID：system / jiangcheng / youyuan / kaiti */
+    /** 稳定 ID：system / langyuan / youyuan / kaiti / heiyuan */
     public static String getSubtitleFontId() {
         return SubtitleFontManager.idOf(getSubtitleFontIndex());
     }
