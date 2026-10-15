@@ -1017,33 +1017,39 @@ public class Setting {
     }
 
     /**
-     * 字幕字体：系统默认 / 幼圆 / 楷体 / 黑圆 / 细圆。
-     * index: 0=系统默认, 1=幼圆, 2=楷体, 3=黑圆(默认), 4=细圆。
+     * 字幕字体：系统默认 / 楷体 / 黑圆 / 细圆。
+     * index: 0=系统默认, 1=楷体, 2=黑圆(默认), 3=细圆。
      * 旧配置一次性迁移；默认仍为黑圆。
      */
     public static int getSubtitleFontIndex() {
-        int v = Prefers.getInt("subtitle_font_index", 3); // 默认黑圆
+        int v = Prefers.getInt("subtitle_font_index", 2); // 默认黑圆
         if (v < 0) v = 0;
-        // v3：去掉浪圆后的 4 档映射（上一版 0系统 1浪圆 2幼圆 3楷体 4黑圆）
-        boolean migratedV3 = Prefers.getBoolean("subtitle_font_index_v3", false);
-        if (!migratedV3) {
-            // 先处理更早的 v2（旧 3 档 +1）
-            boolean migratedV2 = Prefers.getBoolean("subtitle_font_index_v2", false);
-            if (!migratedV2) {
-                if (v >= 0 && v <= 2) {
-                    v = v + 1; // 旧 0江城1幼圆2楷体 → 曾对应 1/2/3
+        // v4：去掉幼圆后的 4 档（上一版 0系统 1幼圆 2楷体 3黑圆 4细圆）
+        boolean migratedV4 = Prefers.getBoolean("subtitle_font_index_v4", false);
+        if (!migratedV4) {
+            boolean migratedV3 = Prefers.getBoolean("subtitle_font_index_v3", false);
+            if (!migratedV3) {
+                boolean migratedV2 = Prefers.getBoolean("subtitle_font_index_v2", false);
+                if (!migratedV2) {
+                    if (v >= 0 && v <= 2) v = v + 1;
+                    try { Prefers.put("subtitle_font_index_v2", true); } catch (Throwable ignored) {}
                 }
-                try { Prefers.put("subtitle_font_index_v2", true); } catch (Throwable ignored) {}
+                // 含浪圆 5 档 → 曾 4 档含幼圆
+                if (v == 1) v = 3;       // 浪圆 → 黑圆
+                else if (v == 2) v = 1;  // 幼圆占位，后面再映
+                else if (v == 3) v = 2;  // 楷体
+                else if (v == 4) v = 3;  // 黑圆
+                else if (v > 4) v = 2;
+                try { Prefers.put("subtitle_font_index_v3", true); } catch (Throwable ignored) {}
             }
-            // 再从「含浪圆的 5 档」映到当前 4 档
-            // 0系统→0, 1浪圆→3黑圆, 2幼圆→1, 3楷体→2, 4黑圆→3
-            if (v == 1) v = 3;
-            else if (v == 2) v = 1;
-            else if (v == 3) v = 2;
-            else if (v == 4) v = 3;
-            else if (v > 4) v = 3;
+            // 含幼圆：0系统 1幼圆 2楷体 3黑圆 4细圆 → 0系统 1楷体 2黑圆 3细圆
+            if (v == 1) v = 2;       // 幼圆 → 黑圆
+            else if (v == 2) v = 1;  // 楷体
+            else if (v == 3) v = 2;  // 黑圆
+            else if (v == 4) v = 3;  // 细圆
+            else if (v > 4) v = 2;
             try { Prefers.put("subtitle_font_index", v); } catch (Throwable ignored) {}
-            try { Prefers.put("subtitle_font_index_v3", true); } catch (Throwable ignored) {}
+            try { Prefers.put("subtitle_font_index_v4", true); } catch (Throwable ignored) {}
         }
         return SubtitleFontManager.normalizeIndex(v);
     }
@@ -1056,7 +1062,7 @@ public class Setting {
         putSubtitleFontIndex((getSubtitleFontIndex() + 1) % SubtitleFontManager.count());
     }
 
-    /** 稳定 ID：system / youyuan / kaiti / heiyuan / xiyuan */
+    /** 稳定 ID：system / kaiti / heiyuan / xiyuan */
     public static String getSubtitleFontId() {
         return SubtitleFontManager.idOf(getSubtitleFontIndex());
     }

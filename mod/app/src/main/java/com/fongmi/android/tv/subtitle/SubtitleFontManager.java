@@ -13,7 +13,7 @@ import java.util.Locale;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 内置字幕字体：system / youyuan / kaiti / heiyuan / xiyuan（assets/fonts/）。
+ * 内置字幕字体：system / kaiti / heiyuan / xiyuan（assets/fonts/）。
  * Mobile / Leanback / Exo / MPV 共用。
  * index 0 = 系统默认（无自定义文件），便于对比是否生效。
  */
@@ -21,15 +21,14 @@ public final class SubtitleFontManager {
 
     private static final String TAG = "SubtitleFont";
     public static final String ID_SYSTEM = "system";
-    public static final String ID_YOUYUAN = "youyuan";
     public static final String ID_KAITI = "kaiti";
     public static final String ID_HEIYUAN = "heiyuan";
     public static final String ID_XIYUAN = "xiyuan";
 
-    // 0 系统默认, 1 幼圆, 2 楷体, 3 黑圆(默认), 4 细圆
-    private static final String[] IDS = {ID_SYSTEM, ID_YOUYUAN, ID_KAITI, ID_HEIYUAN, ID_XIYUAN};
-    private static final String[] LABELS_ZH = {"系统默认", "幼圆", "楷体", "黑圆", "细圆"};
-    private static final String[] LABELS_EN = {"System", "YouYuan", "KaiTi", "HeiYuan", "XiYuan"};
+    // 0 系统默认, 1 楷体, 2 黑圆(默认), 3 细圆
+    private static final String[] IDS = {ID_SYSTEM, ID_KAITI, ID_HEIYUAN, ID_XIYUAN};
+    private static final String[] LABELS_ZH = {"系统默认", "楷体", "黑圆", "细圆"};
+    private static final String[] LABELS_EN = {"System", "KaiTi", "HeiYuan", "XiYuan"};
 
     private static final ConcurrentHashMap<String, Typeface> TYPEFACE_CACHE = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, File> FILE_CACHE = new ConcurrentHashMap<>();
@@ -57,32 +56,28 @@ public final class SubtitleFontManager {
                 || "系统".equals(s) || "系统默认".equals(s)) {
             return 0;
         }
-        // 幼圆
-        if (s.contains("you") || s.contains("幼") || "youyuan".equals(s)) {
-            return 1;
-        }
         // 楷体
         if (s.contains("kai") || s.contains("cursive") || s.contains("楷")) {
-            return 2;
+            return 1;
         }
-        // 黑圆（旧浪圆/江城名也落到黑圆）
-        if (s.contains("hei") || s.contains("黑圆") || s.contains("yahei") || "heiyuan".equals(s)
+        // 黑圆（旧幼圆/浪圆/江城也落到黑圆）
+        if (s.contains("hei") || s.contains("黑") || s.contains("yahei") || "heiyuan".equals(s)
+                || s.contains("you") || s.contains("幼") || "youyuan".equals(s)
                 || s.contains("lang") || s.contains("浪") || s.contains("jiang") || s.contains("cheng")
                 || s.contains("江城") || "jiangcheng".equals(s) || "langyuan".equals(s)) {
-            return 3;
+            return 2;
         }
         // 细圆
         if (s.contains("xi") || s.contains("细") || "xiyuan".equals(s)) {
-            return 4;
+            return 3;
         }
         if (s.contains("song") || s.contains("serif") || s.contains("mono") || s.contains("fang")) {
-            return 3;
+            return 2;
         }
         if ("0".equals(s)) return 1;
         if ("1".equals(s)) return 1;
         if ("2".equals(s)) return 2;
         if ("3".equals(s)) return 3;
-        if ("4".equals(s)) return 4;
         return 0;
     }
 
@@ -181,8 +176,6 @@ public final class SubtitleFontManager {
         File dir = getFontsDir();
         if (dir == null) return;
         String[][] pairs = new String[][]{
-                {ID_YOUYUAN, "幼圆"},
-                {ID_YOUYUAN, "YouYuan"},
                 {ID_KAITI, "楷体"},
                 {ID_KAITI, "KaiTi"},
                 {ID_KAITI, "STKaiti"},

@@ -1,1 +1,1 @@
-Place: youyuan / kaiti / heiyuan / xiyuan (.ttf/.otf)
+Place: kaiti / heiyuan / xiyuan (.ttf/.otf)
