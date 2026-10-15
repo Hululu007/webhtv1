@@ -11,13 +11,13 @@ fi
 MOD="$(cd "$(dirname "$0")" && pwd)"
 echo "[mod] root=$ROOT"
 
-# 同步根目录 fonts/ 到 assets（jiangcheng/youyuan/kaiti）
+# 同步根目录 fonts/ 到 assets（youyuan/kaiti/heiyuan）
 sync_subtitle_fonts() {
   local src_dir="$MOD/fonts"
   local dst_dir="$MOD/app/src/main/assets/fonts"
   mkdir -p "$dst_dir"
   if [[ -d "$src_dir" ]]; then
-    for id in jiangcheng youyuan kaiti; do
+    for id in youyuan kaiti heiyuan; do
       for ext in ttf otf TTF OTF ttc TTC ""; do
         local f
         if [[ -n "$ext" ]]; then f="$src_dir/${id}.${ext}"; else f="$src_dir/${id}"; fi
