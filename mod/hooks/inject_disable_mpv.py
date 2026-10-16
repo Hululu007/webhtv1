@@ -245,8 +245,8 @@ def patch_kernel_dialog() -> None:
     }
 
     public static void show(FragmentActivity activity, int selected, Listener listener) {
-        int current = PlayerSetting.sanitizePlayer(selected);
-        if (current == PlayerSetting.MPV) current = PlayerSetting.EXO;
+        int raw = PlayerSetting.sanitizePlayer(selected);
+        final int current = (raw == PlayerSetting.MPV) ? PlayerSetting.EXO : raw;
         String[] items = kernelsWithoutMpv(activity.getResources());
         int checked = current == PlayerSetting.IJK ? 1 : 0;
         ChoiceDialog.showSingleNoCancel(activity, R.string.player_kernel, items, checked, which -> {
@@ -256,8 +256,8 @@ def patch_kernel_dialog() -> None:
     }
 
     public static void show(Fragment fragment, int selected, Listener listener) {
-        int current = PlayerSetting.sanitizePlayer(selected);
-        if (current == PlayerSetting.MPV) current = PlayerSetting.EXO;
+        int raw = PlayerSetting.sanitizePlayer(selected);
+        final int current = (raw == PlayerSetting.MPV) ? PlayerSetting.EXO : raw;
         String[] items = kernelsWithoutMpv(fragment.getResources());
         int checked = current == PlayerSetting.IJK ? 1 : 0;
         ChoiceDialog.showSingleNoCancel(fragment, R.string.player_kernel, items, checked, which -> {
