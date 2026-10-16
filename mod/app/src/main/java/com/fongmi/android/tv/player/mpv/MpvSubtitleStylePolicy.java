@@ -17,7 +17,7 @@ public final class MpvSubtitleStylePolicy {
         String primary = toAssColour(argb);
         String zh = Setting.getSubtitleFontFamily();
         String id = Setting.getSubtitleFontId();
-        if (zh == null || zh.isEmpty()) zh = "雅黑";
+        if (zh == null || zh.isEmpty()) zh = "江城圆体";
         // 同时指定中文名（别名文件）——libass FontName
         return "FontName=" + zh
                 + ",PrimaryColour=" + primary
@@ -52,7 +52,7 @@ public final class MpvSubtitleStylePolicy {
             if (zh != null && !zh.isEmpty()) return zh;
         } catch (Throwable ignored) {
         }
-        return "yahei";
+        return "jiangcheng";
     }
 
     public static String getSubFontsDirProperty() {

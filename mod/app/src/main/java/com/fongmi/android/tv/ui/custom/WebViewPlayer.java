@@ -17,6 +17,7 @@ import android.webkit.SslErrorHandler;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -43,6 +44,18 @@ public class WebViewPlayer {
             + "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
     private static final String MOBILE_UA = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 "
             + "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36";
+    /** Desktop UA required for yangshipin; MOBILE_UA kept unused. */
+    private static volatile boolean sPageCacheReady = false;
+    private static final String[] BLOCK_HOST_SNIPS = {
+            "google-analytics.com", "googletagmanager.com", "googlesyndication.com",
+            "doubleclick.net", "googleadservices.com", "scorecardresearch.com",
+            "facebook.com/tr", "connect.facebook.net", "hm.baidu.com",
+            "cnzz.com", "umeng.com", "sensorsdata", "growingio.com",
+            "hotjar.com", "clarity.ms", "sentry.io", "bugly.qq.com",
+            "tdm.qq.com", "pingjs.qq.com", "beacon.qq.com",
+            "als.baidu.com", "pos.baidu.com", "cpro.baidu.com",
+            "lianmeng.360.cn", "dsp.toutiao.com", "ad.toutiao.com",
+    };
     // onPageStarted FastLoading 清理脚本
     private static final String FAST_LOADING_JS = """
             function FastLoading() {
@@ -307,6 +320,11 @@ public class WebViewPlayer {
         } else {
             // 切台：复用当前webview直接加载新链接
             SpiderDebug.log(TAG, "switch url: %s", url);
+            try {
+                if (sPageCacheReady) {
+                    activeWebView.getSettings().setCacheMode(WebSettings.LOAD_CACHE_ELSE_NETWORK);
+                }
+            } catch (Throwable ignored) {}
             activeWebView.stopLoading();
             this.touchListener = touchListener;
             this.playbackListener = playbackListener;
@@ -340,7 +358,7 @@ public class WebViewPlayer {
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
         s.setDatabaseEnabled(true);
-        s.setCacheMode(WebSettings.LOAD_DEFAULT);
+        s.setCacheMode(sPageCacheReady ? WebSettings.LOAD_CACHE_ELSE_NETWORK : WebSettings.LOAD_DEFAULT);
         s.setJavaScriptCanOpenWindowsAutomatically(true);
         s.setMediaPlaybackRequiresUserGesture(false);
         try {
@@ -392,6 +410,11 @@ public class WebViewPlayer {
                     + "}catch(e){}})();",
                     null);
 
+                sPageCacheReady = true;
+                try {
+                    WebSettings ws = view.getSettings();
+                    if (ws != null) ws.setCacheMode(WebSettings.LOAD_CACHE_ELSE_NETWORK);
+                } catch (Throwable ignored) {}
                 // yangshipin often needs a user gesture / click to start
                 mainHandler.postDelayed(() -> {
                     try { simulateClick(view); } catch (Throwable ignored) {}
@@ -405,6 +428,35 @@ public class WebViewPlayer {
             }
 
 
+
+
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                try {
+                    if (request == null || request.getUrl() == null) {
+                        return super.shouldInterceptRequest(view, request);
+                    }
+                    String u = request.getUrl().toString();
+                    String host = request.getUrl().getHost();
+                    if (host == null) host = "";
+                    String lower = u.toLowerCase();
+                    if (lower.endsWith(".wasm") || lower.contains(".wasm?")
+                            || lower.contains(".m3u8") || lower.contains(".ts")
+                            || lower.contains(".mp4") || lower.contains(".mpd") || lower.contains(".flv")
+                            || lower.contains("yangshipin") || lower.contains("cmg.cn")
+                            || lower.contains("cctv") || lower.contains("ysp.cctv.cn")
+                            || lower.contains("/player") || lower.contains("wasm")) {
+                        return super.shouldInterceptRequest(view, request);
+                    }
+                    for (String snip : BLOCK_HOST_SNIPS) {
+                        if (host.contains(snip) || lower.contains(snip)) {
+                            return new WebResourceResponse("text/plain", "utf-8",
+                                    new java.io.ByteArrayInputStream(new byte[0]));
+                        }
+                    }
+                } catch (Throwable ignored) {}
+                return super.shouldInterceptRequest(view, request);
+            }
 
             @Override
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
@@ -495,12 +547,17 @@ public class WebViewPlayer {
     private void destroyWebView(WebView wv) {
         if (wv == null) return;
         try {
-            wv.stopLoading();
-            wv.loadUrl("about:blank");
-            wv.onPause();
-            wv.removeAllViews();
-            if (container != null) container.removeView(wv);
-            wv.destroy();
+            try { wv.setVisibility(View.GONE); } catch (Throwable ignored) {}
+            try { wv.stopLoading(); } catch (Throwable ignored) {}
+            try { wv.loadUrl("about:blank"); } catch (Throwable ignored) {}
+            try { wv.onPause(); } catch (Throwable ignored) {}
+            try { wv.removeAllViews(); } catch (Throwable ignored) {}
+            try {
+                android.view.ViewParent parent = wv.getParent();
+                if (parent instanceof ViewGroup) ((ViewGroup) parent).removeView(wv);
+                else if (container != null) container.removeView(wv);
+            } catch (Throwable ignored) {}
+            try { wv.destroy(); } catch (Throwable ignored) {}
         } catch (Throwable ignored) {}
     }
 

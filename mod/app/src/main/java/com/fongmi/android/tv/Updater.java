@@ -489,7 +489,18 @@ public class Updater implements UpdateTransfer.Callback, UpdateListener {
         routes = null;
         resetProgress();
         Notify.show(msg);
-        dismiss();
+        // 不要关掉更新弹窗：换镜像后下载失败很常见，保留弹窗方便重试
+        try {
+            if (dialog != null && dialog.isAdded()) {
+                dialog.resetAfterError();
+            } else {
+                FragmentActivity activity = activityRef == null ? null : activityRef.get();
+                if (activity != null && !activity.isFinishing() && !activity.isDestroyed()) {
+                    App.post(() -> show(activity));
+                }
+            }
+        } catch (Throwable ignored) {
+        }
     }
 
     @Override
@@ -510,7 +521,13 @@ public class Updater implements UpdateTransfer.Callback, UpdateListener {
                     downloading = false;
                     routes = null;
                     Notify.show(error);
-                    dismiss();
+                    try {
+                        if (dialog != null && dialog.isAdded()) dialog.resetAfterError();
+                        else {
+                            FragmentActivity a = activityRef == null ? null : activityRef.get();
+                            if (a != null && !a.isFinishing()) App.post(() -> show(a));
+                        }
+                    } catch (Throwable ignored) {}
                     return;
                 }
                 routes = null;

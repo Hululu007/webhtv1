@@ -64,3 +64,40 @@ else:
 
 path.write_text(t2, encoding="utf-8")
 print("[mod] VodFragment home push patched", t2.count("applyHomePushFab"))
+
+# Immediate effect when returning from settings: hide FAB if disabled
+t2 = path.read_text(encoding="utf-8")
+if "syncHomePushFabOnResume" not in t2:
+    # inject helper
+    if "applyHomePushFab" in t2 and "void syncHomePushFabOnResume" not in t2:
+        helper2 = """
+    private void syncHomePushFabOnResume() {
+        try {
+            if (!Setting.isHomePush()) {
+                mBinding.link.setVisibility(View.GONE);
+            }
+        } catch (Throwable ignored) {}
+    }
+"""
+        t2 = t2.rstrip()
+        if t2.endswith("}"):
+            t2 = t2[:-1] + helper2 + "\n}\n"
+    # call from onResume if present
+    if "void onResume" in t2 and "syncHomePushFabOnResume" not in t2:
+        t2 = re.sub(
+            r"(public void onResume\(\)\s*\{[\s\S]*?super\.onResume\(\);)",
+            r"\1\n        syncHomePushFabOnResume();",
+            t2,
+            count=1,
+        )
+        # fragment may use protected
+        if "syncHomePushFabOnResume();" not in t2:
+            t2 = re.sub(
+                r"(public void onResume\(\)\s*\{)",
+                r"\1\n        try { syncHomePushFabOnResume(); } catch (Throwable ignored) {}",
+                t2,
+                count=1,
+            )
+    path.write_text(t2, encoding="utf-8")
+    print("[mod] home push onResume sync", "syncHomePushFabOnResume" in t2)
+
