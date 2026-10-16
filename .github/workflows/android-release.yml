@@ -453,21 +453,24 @@ jobs:
         run: |
           set -euo pipefail
           if [ ! -f mod/hooks/inject_disable_mpv.py ]; then
-            echo "ERROR: mod/hooks/inject_disable_mpv.py missing — put it under mod/hooks/"
+            echo "ERROR: mod/hooks/inject_disable_mpv.py missing"
             exit 1
           fi
           python3 mod/hooks/inject_disable_mpv.py .
           echo "---- post-inject proof ----"
-          grep -n "MPV_DISABLED\|KERNEL_ORDER = {EXO, IJK, SYSTEM}" \
-            app/src/main/java/com/fongmi/android/tv/setting/PlayerSetting.java || true
-          grep -n "MPV_DISABLED\|new ExoPlayerEngine.*MPV_DISABLED\|if (type == PlayerSetting.MPV)" \
-            app/src/main/java/com/fongmi/android/tv/player/PlayerManager.java || true
+          grep -n "MPV_DISABLED" app/src/main/java/com/fongmi/android/tv/setting/PlayerSetting.java || true
+          grep -n "MPV_DISABLED" app/src/main/java/com/fongmi/android/tv/player/PlayerManager.java || true
+          grep -n "MPV_DISABLED" app/src/main/java/com/fongmi/android/tv/ui/dialog/PlayerKernelDialog.java || true
           if grep -q "new MpvPlayerEngine" app/src/main/java/com/fongmi/android/tv/player/PlayerManager.java; then
-            echo "ERROR: new MpvPlayerEngine still present in PlayerManager"
+            echo "ERROR: new MpvPlayerEngine still present"
             exit 1
           fi
-          if ! grep -q 'KERNEL_ORDER = {EXO, IJK, SYSTEM}' app/src/main/java/com/fongmi/android/tv/setting/PlayerSetting.java; then
-            echo "ERROR: KERNEL_ORDER still lists MPV"
+          if ! grep -q "MPV_DISABLED: never construct MpvPlayerEngine" app/src/main/java/com/fongmi/android/tv/player/PlayerManager.java; then
+            echo "ERROR: buildEngine guard missing"
+            exit 1
+          fi
+          if ! grep -q "MPV_DISABLED: only EXO / IJK" app/src/main/java/com/fongmi/android/tv/ui/dialog/PlayerKernelDialog.java; then
+            echo "ERROR: PlayerKernelDialog not patched"
             exit 1
           fi
           echo "MPV disable verified"
