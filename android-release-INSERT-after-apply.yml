@@ -1,0 +1,28 @@
+# ============================================================
+# 插入位置：紧接在「Apply mod patches」步骤之后、
+# 「Relax Gradle Daemon JVM lock」之前。
+# 与现有步骤同样带 if: should_build
+# ============================================================
+      - name: Disable MPV (inject + verify)
+        if: steps.should_build.outputs.build == 'true'
+        run: |
+          set -euo pipefail
+          if [ ! -f mod/hooks/inject_disable_mpv.py ]; then
+            echo "ERROR: mod/hooks/inject_disable_mpv.py missing — put it under mod/hooks/"
+            exit 1
+          fi
+          python3 mod/hooks/inject_disable_mpv.py .
+          echo "---- post-inject proof ----"
+          grep -n "MPV_DISABLED\|KERNEL_ORDER = {EXO, IJK, SYSTEM}" \
+            app/src/main/java/com/fongmi/android/tv/setting/PlayerSetting.java || true
+          grep -n "MPV_DISABLED\|new ExoPlayerEngine.*MPV_DISABLED\|if (type == PlayerSetting.MPV)" \
+            app/src/main/java/com/fongmi/android/tv/player/PlayerManager.java || true
+          if grep -q "new MpvPlayerEngine" app/src/main/java/com/fongmi/android/tv/player/PlayerManager.java; then
+            echo "ERROR: new MpvPlayerEngine still present in PlayerManager"
+            exit 1
+          fi
+          if ! grep -q 'KERNEL_ORDER = {EXO, IJK, SYSTEM}' app/src/main/java/com/fongmi/android/tv/setting/PlayerSetting.java; then
+            echo "ERROR: KERNEL_ORDER still lists MPV"
+            exit 1
+          fi
+          echo "MPV disable verified"

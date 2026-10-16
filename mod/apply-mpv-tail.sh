@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 将下面几行追加到现有 mod/apply.sh 最末尾（在全部 cp 完成之后）
+# 可选：追加到现有 mod/apply.sh 最末尾（全部文件 copy 完成之后）
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MOD="$(cd "$(dirname "$0")" && pwd)"
