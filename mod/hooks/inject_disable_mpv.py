@@ -1,15 +1,11 @@
 #!/usr/bin/env python3
 """
-全局禁用 MPV，统一落到 EXO。
+全局禁用 MPV（针对 fish2018/webhtv 源码结构）。
 
-用法（在仓库根目录，apply.sh 复制完 mod 文件之后、Gradle 之前）:
-  python3 mod/hooks/inject_disable_mpv.py "$ROOT"
+用法（android-release 中 apply.sh 之后）:
+  python3 mod/hooks/inject_disable_mpv.py .
 
-设计原则:
-  - 基于 Silent1566/webhtv（鱼壳）当前真实源码字符串做精确替换
-  - 已打过补丁则跳过该项（可重复执行）
-  - 任一项既未生效、又匹配失败 → 非 0 退出，让 CI 失败
-  - 结尾 verify() 再次扫描关键标记，失败同样非 0 退出
+常量（鱼壳）: EXO=0, IJK=1, MPV=2（无 SYSTEM / KERNEL_ORDER）
 """
 from __future__ import annotations
 
@@ -50,7 +46,6 @@ def replace_once(
     *,
     already_markers: list[str] | None = None,
 ) -> str:
-    """精确替换一次。已含 marker 则 skip；old 不在且未 patch → error。"""
     markers = already_markers or []
     if any(m in text for m in markers):
         SKIP.append(f"{name}: already applied ({rel(path)})")
@@ -58,7 +53,7 @@ def replace_once(
     if old not in text:
         ERRORS.append(
             f"{name}: pattern not found in {rel(path)}\n"
-            f"  expected snippet starts with: {old[:80]!r}..."
+            f"  expected starts with: {old[:90]!r}..."
         )
         return text
     text2 = text.replace(old, new, 1)
@@ -69,64 +64,68 @@ def replace_once(
     return text2
 
 
-def regex_replace_once(
-    name: str,
-    path: Path,
-    text: str,
-    pattern: str,
-    repl: str,
-    *,
-    already_markers: list[str] | None = None,
-    flags: int = re.MULTILINE,
-) -> str:
-    markers = already_markers or []
-    if any(m in text for m in markers):
-        SKIP.append(f"{name}: already applied ({rel(path)})")
-        return text
-    rx = re.compile(pattern, flags)
-    m = rx.search(text)
-    if not m:
-        ERRORS.append(f"{name}: regex not found in {rel(path)}\n  pattern: {pattern[:100]}")
-        return text
-    text2, n = rx.subn(repl, text, count=1)
-    if n != 1:
-        ERRORS.append(f"{name}: expected 1 substitution, got {n} ({rel(path)})")
-        return text
-    OK.append(f"{name}: OK ({rel(path)})")
-    return text2
-
-
-# ---------------------------------------------------------------------------
-# PlayerSetting.java
-# ---------------------------------------------------------------------------
-
 def patch_player_setting() -> None:
     path = ROOT / "app/src/main/java/com/fongmi/android/tv/setting/PlayerSetting.java"
     text = require_file(path)
     if text is None:
         return
 
-    text = replace_once(
-        "KERNEL_ORDER",
-        path,
-        text,
-        "public static final int[] KERNEL_ORDER = {EXO, IJK, MPV, SYSTEM};",
-        "public static final int[] KERNEL_ORDER = {EXO, IJK, SYSTEM}; // MPV_DISABLED",
-        already_markers=["KERNEL_ORDER = {EXO, IJK, SYSTEM}"],
-    )
+    # Detect lineage
+    if "KERNEL_ORDER" in text and "SYSTEM" in text:
+        ERRORS.append(
+            "PlayerSetting looks like Silent1566 fork (KERNEL_ORDER present). "
+            "This script targets fish2018 (EXO/IJK/MPV only). Update script or tree."
+        )
+        return
 
     text = replace_once(
         "isPlayer",
         path,
         text,
         "public static boolean isPlayer(int player) {\n"
-        "        return player == EXO || player == IJK || player == SYSTEM || player == MPV;\n"
+        "        return player == EXO || player == IJK || player == MPV;\n"
         "    }",
         "public static boolean isPlayer(int player) {\n"
-        "        // MPV_DISABLED: MPV is no longer a selectable kernel\n"
-        "        return player == EXO || player == IJK || player == SYSTEM;\n"
+        "        // MPV_DISABLED\n"
+        "        return player == EXO || player == IJK;\n"
         "    }",
-        already_markers=["MPV_DISABLED: MPV is no longer a selectable kernel"],
+        already_markers=["// MPV_DISABLED\n        return player == EXO || player == IJK;"],
+    )
+
+    text = replace_once(
+        "sanitizePlayer",
+        path,
+        text,
+        "public static int sanitizePlayer(int player) {\n"
+        "        return player == IJK || player == MPV ? player : EXO;\n"
+        "    }",
+        "public static int sanitizePlayer(int player) {\n"
+        "        // MPV_DISABLED: MPV maps to EXO\n"
+        "        return player == IJK ? player : EXO;\n"
+        "    }",
+        already_markers=["MPV_DISABLED: MPV maps to EXO"],
+    )
+
+    text = replace_once(
+        "nextPlayer",
+        path,
+        text,
+        "public static int nextPlayer(int player) {\n"
+        "        return switch (sanitizePlayer(player)) {\n"
+        "            case EXO -> IJK;\n"
+        "            case IJK -> MPV;\n"
+        "            default -> EXO;\n"
+        "        };\n"
+        "    }",
+        "public static int nextPlayer(int player) {\n"
+        "        // MPV_DISABLED: cycle EXO <-> IJK only\n"
+        "        return switch (sanitizePlayer(player)) {\n"
+        "            case EXO -> IJK;\n"
+        "            case IJK -> EXO;\n"
+        "            default -> EXO;\n"
+        "        };\n"
+        "    }",
+        already_markers=["MPV_DISABLED: cycle EXO <-> IJK only"],
     )
 
     text = replace_once(
@@ -168,48 +167,8 @@ def patch_player_setting() -> None:
         already_markers=["MPV_DISABLED: never persist MPV"],
     )
 
-    text = replace_once(
-        "getActivePlayer",
-        path,
-        text,
-        "public static int getActivePlayer() {\n"
-        "        int player = activePlayer;\n"
-        "        return isPlayer(player) ? player : getPlayer();\n"
-        "    }",
-        "public static int getActivePlayer() {\n"
-        "        int player = activePlayer;\n"
-        "        // MPV_DISABLED: stale session kernel\n"
-        "        if (player == MPV) {\n"
-        "            activePlayer = EXO;\n"
-        "            return getPlayer();\n"
-        "        }\n"
-        "        return isPlayer(player) ? player : getPlayer();\n"
-        "    }",
-        already_markers=["MPV_DISABLED: stale session kernel"],
-    )
-
-    text = replace_once(
-        "putActivePlayer",
-        path,
-        text,
-        "public static void putActivePlayer(int player) {\n"
-        "        activePlayer = isPlayer(player) ? player : NONE;\n"
-        "    }",
-        "public static void putActivePlayer(int player) {\n"
-        "        // MPV_DISABLED: never activate MPV\n"
-        "        if (player == MPV) player = EXO;\n"
-        "        activePlayer = isPlayer(player) ? player : NONE;\n"
-        "    }",
-        already_markers=["MPV_DISABLED: never activate MPV"],
-    )
-
-    # sanitizePlayer already relies on isPlayer → MPV maps to EXO after isPlayer patch
     save(path, text)
 
-
-# ---------------------------------------------------------------------------
-# PlayerManager.java — only construction site for MpvPlayerEngine
-# ---------------------------------------------------------------------------
 
 def patch_player_manager() -> None:
     path = ROOT / "app/src/main/java/com/fongmi/android/tv/player/PlayerManager.java"
@@ -217,56 +176,110 @@ def patch_player_manager() -> None:
     if text is None:
         return
 
-    # Guard at top of buildEngine (covers all call sites)
+    # fish2018 compact buildEngine
     text = replace_once(
-        "buildEngine_guard",
+        "buildEngine",
         path,
         text,
         "    private PlayerEngine buildEngine(int type, int decode) {\n"
-        "        // Every engine build discards the AudioSink that carried the PCM tap, so the next\n"
-        "        // one deserves a fresh attempt budget. rebuildAudioPipeline() itself does not come\n"
-        "        // through here, which is what keeps the cap meaningful.\n"
-        "        adAudioPipelineRebuilds = 0;\n",
+        "        return switch (type) {\n"
+        "            case PlayerSetting.IJK -> new IjkPlayerEngine(decode, listener);\n"
+        "            case PlayerSetting.MPV -> new MpvPlayerEngine(decode, listener, this::onMpvVideoSizeProbed);\n"
+        "            default -> new ExoPlayerEngine(decode, listener);\n"
+        "        };\n"
+        "    }",
         "    private PlayerEngine buildEngine(int type, int decode) {\n"
-        "        // MPV_DISABLED: any request for MPV becomes EXO before engine construction\n"
+        "        // MPV_DISABLED: never construct MpvPlayerEngine\n"
         "        if (type == PlayerSetting.MPV) type = PlayerSetting.EXO;\n"
-        "        // Every engine build discards the AudioSink that carried the PCM tap, so the next\n"
-        "        // one deserves a fresh attempt budget. rebuildAudioPipeline() itself does not come\n"
-        "        // through here, which is what keeps the cap meaningful.\n"
-        "        adAudioPipelineRebuilds = 0;\n",
-        already_markers=["MPV_DISABLED: any request for MPV becomes EXO"],
+        "        return switch (type) {\n"
+        "            case PlayerSetting.IJK -> new IjkPlayerEngine(decode, listener);\n"
+        "            case PlayerSetting.MPV -> new ExoPlayerEngine(decode, listener); // MPV_DISABLED\n"
+        "            default -> new ExoPlayerEngine(decode, listener);\n"
+        "        };\n"
+        "    }",
+        already_markers=["MPV_DISABLED: never construct MpvPlayerEngine"],
     )
 
-    text = replace_once(
-        "buildEngine_switch_arm",
-        path,
-        text,
-        "case PlayerSetting.MPV -> new MpvPlayerEngine(decode, lutAllowed, listener, this::onMpvVideoSizeProbed);",
-        "case PlayerSetting.MPV -> new ExoPlayerEngine(decode, listener, mediaSignals, mediaClock); // MPV_DISABLED",
-        already_markers=["case PlayerSetting.MPV -> new ExoPlayerEngine"],
-    )
-
-    # Safety: no remaining `new MpvPlayerEngine` in this file after patch
     save(path, text)
     text2 = path.read_text(encoding="utf-8")
     if "new MpvPlayerEngine" in text2:
         ERRORS.append(
-            "PlayerManager still contains `new MpvPlayerEngine` after patch — "
-            "another construction site needs handling"
+            "PlayerManager still contains `new MpvPlayerEngine` after patch"
         )
     else:
         OK.append("PlayerManager: no remaining new MpvPlayerEngine")
 
 
-# ---------------------------------------------------------------------------
-# Settings UI: setMpvRows always hidden
-# ---------------------------------------------------------------------------
+def patch_kernel_dialog() -> None:
+    """Dialog lists full R.array; force only EXO/IJK labels and indices."""
+    path = ROOT / "app/src/main/java/com/fongmi/android/tv/ui/dialog/PlayerKernelDialog.java"
+    text = require_file(path)
+    if text is None:
+        return
+
+    if "MPV_DISABLED" in text:
+        SKIP.append(f"PlayerKernelDialog: already applied ({rel(path)})")
+        return
+
+    # Replace entire class body logic with filtered kernels — exact fish2018 file is small
+    old = '''    public static void show(FragmentActivity activity, int selected, Listener listener) {
+        int current = PlayerSetting.sanitizePlayer(selected);
+        ChoiceDialog.showSingleNoCancel(activity, R.string.player_kernel, activity.getResources().getStringArray(R.array.select_player_kernel), current, which -> notifySelected(current, which, listener));
+    }
+
+    public static void show(Fragment fragment, int selected, Listener listener) {
+        int current = PlayerSetting.sanitizePlayer(selected);
+        ChoiceDialog.showSingleNoCancel(fragment, R.string.player_kernel, fragment.getResources().getStringArray(R.array.select_player_kernel), current, which -> notifySelected(current, which, listener));
+    }
+
+    private static void notifySelected(int current, int selected, Listener listener) {
+        int target = PlayerSetting.sanitizePlayer(selected);
+        if (target != current && listener != null) listener.onSelected(target);
+    }
+'''
+    new = '''    /** MPV_DISABLED: only EXO / IJK appear in the kernel picker. */
+    private static String[] kernelsWithoutMpv(android.content.res.Resources res) {
+        String[] all = res.getStringArray(R.array.select_player_kernel);
+        if (all.length <= 2) return all;
+        return new String[]{all[PlayerSetting.EXO], all[PlayerSetting.IJK]};
+    }
+
+    public static void show(FragmentActivity activity, int selected, Listener listener) {
+        int current = PlayerSetting.sanitizePlayer(selected);
+        if (current == PlayerSetting.MPV) current = PlayerSetting.EXO;
+        String[] items = kernelsWithoutMpv(activity.getResources());
+        int checked = current == PlayerSetting.IJK ? 1 : 0;
+        ChoiceDialog.showSingleNoCancel(activity, R.string.player_kernel, items, checked, which -> {
+            int target = which == 1 ? PlayerSetting.IJK : PlayerSetting.EXO;
+            notifySelected(current, target, listener);
+        });
+    }
+
+    public static void show(Fragment fragment, int selected, Listener listener) {
+        int current = PlayerSetting.sanitizePlayer(selected);
+        if (current == PlayerSetting.MPV) current = PlayerSetting.EXO;
+        String[] items = kernelsWithoutMpv(fragment.getResources());
+        int checked = current == PlayerSetting.IJK ? 1 : 0;
+        ChoiceDialog.showSingleNoCancel(fragment, R.string.player_kernel, items, checked, which -> {
+            int target = which == 1 ? PlayerSetting.IJK : PlayerSetting.EXO;
+            notifySelected(current, target, listener);
+        });
+    }
+
+    private static void notifySelected(int current, int selected, Listener listener) {
+        int target = PlayerSetting.sanitizePlayer(selected);
+        if (target == PlayerSetting.MPV) target = PlayerSetting.EXO;
+        if (target != current && listener != null) listener.onSelected(target);
+    }
+'''
+    text = replace_once("PlayerKernelDialog", path, text, old, new, already_markers=["MPV_DISABLED: only EXO / IJK"])
+    save(path, text)
+
 
 def patch_set_mpv_rows(path: Path) -> None:
     text = require_file(path)
     if text is None:
         return
-
     text = replace_once(
         f"setMpvRows({rel(path)})",
         path,
@@ -291,74 +304,63 @@ def patch_settings_ui() -> None:
             found += 1
             patch_set_mpv_rows(p)
     if found == 0:
-        ERRORS.append(
-            "No SettingPlayer Fragment/Activity found under app/src/{mobile,leanback}/..."
-        )
+        ERRORS.append("No SettingPlayer Fragment/Activity found")
     else:
         OK.append(f"settings UI: processed {found} file(s)")
 
 
-# ---------------------------------------------------------------------------
-# Final verification (must pass or CI fails)
-# ---------------------------------------------------------------------------
-
 def verify() -> None:
-    checks = [
-        (
-            ROOT / "app/src/main/java/com/fongmi/android/tv/setting/PlayerSetting.java",
-            [
-                "KERNEL_ORDER = {EXO, IJK, SYSTEM}",
-                "MPV_DISABLED: MPV is no longer a selectable kernel",
-                "MPV_DISABLED: migrate legacy preference",
-                "MPV_DISABLED: never persist MPV",
-                "MPV_DISABLED: never activate MPV",
-            ],
-            [],  # MPV constant still referenced for migration guards
-        ),
-        (
-            ROOT / "app/src/main/java/com/fongmi/android/tv/player/PlayerManager.java",
-            [
-                "MPV_DISABLED: any request for MPV becomes EXO",
-                "case PlayerSetting.MPV -> new ExoPlayerEngine",
-            ],
-            ["new MpvPlayerEngine"],
-        ),
-    ]
-    for path, must_have, must_not in checks:
+    ps = ROOT / "app/src/main/java/com/fongmi/android/tv/setting/PlayerSetting.java"
+    pm = ROOT / "app/src/main/java/com/fongmi/android/tv/player/PlayerManager.java"
+    pk = ROOT / "app/src/main/java/com/fongmi/android/tv/ui/dialog/PlayerKernelDialog.java"
+
+    for path, markers in (
+        (ps, [
+            "MPV_DISABLED\n        return player == EXO || player == IJK;",
+            "MPV_DISABLED: MPV maps to EXO",
+            "MPV_DISABLED: cycle EXO <-> IJK only",
+            "MPV_DISABLED: migrate legacy preference",
+            "MPV_DISABLED: never persist MPV",
+        ]),
+        (pm, [
+            "MPV_DISABLED: never construct MpvPlayerEngine",
+            "case PlayerSetting.MPV -> new ExoPlayerEngine",
+        ]),
+        (pk, ["MPV_DISABLED: only EXO / IJK"]),
+    ):
         if not path.is_file():
             ERRORS.append(f"verify: missing {rel(path)}")
             continue
-        text = path.read_text(encoding="utf-8")
-        for s in must_have:
-            if s not in text:
-                ERRORS.append(f"verify FAIL: {rel(path)} missing marker: {s!r}")
+        t = path.read_text(encoding="utf-8")
+        for m in markers:
+            if m not in t:
+                ERRORS.append(f"verify FAIL: {rel(path)} missing {m!r}")
             else:
-                OK.append(f"verify OK: {rel(path)} has {s!r}")
-        for s in must_not:
-            if s in text:
-                ERRORS.append(f"verify FAIL: {rel(path)} still contains {s!r}")
-            else:
-                OK.append(f"verify OK: {rel(path)} clean of {s!r}")
+                OK.append(f"verify OK: {rel(path)} has marker")
 
-    # UI: at least one setMpvRows forced false
+    if pm.is_file() and "new MpvPlayerEngine" in pm.read_text(encoding="utf-8"):
+        ERRORS.append("verify FAIL: new MpvPlayerEngine still in PlayerManager")
+    elif pm.is_file():
+        OK.append("verify OK: no new MpvPlayerEngine")
+
     ui_ok = False
     for p in ROOT.glob("app/src/**/SettingPlayer*.java"):
-        t = p.read_text(encoding="utf-8")
-        if "boolean visible = false; // MPV_DISABLED" in t:
+        if "boolean visible = false; // MPV_DISABLED" in p.read_text(encoding="utf-8"):
             ui_ok = True
             OK.append(f"verify OK: {rel(p)} setMpvRows forced false")
     if not ui_ok:
-        ERRORS.append("verify FAIL: no SettingPlayer* with setMpvRows forced false")
+        ERRORS.append("verify FAIL: setMpvRows not forced false")
 
 
 def main() -> int:
     print(f"[mod] inject_disable_mpv ROOT={ROOT}")
     if not (ROOT / "app").is_dir():
-        print(f"[mod] ERROR: {ROOT}/app not found — pass repository root", file=sys.stderr)
+        print(f"[mod] ERROR: {ROOT}/app not found", file=sys.stderr)
         return 2
 
     patch_player_setting()
     patch_player_manager()
+    patch_kernel_dialog()
     patch_settings_ui()
     verify()
 
