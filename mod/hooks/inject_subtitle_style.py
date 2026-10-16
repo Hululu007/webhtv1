@@ -8,15 +8,18 @@ ROOT = Path(sys.argv[1] if len(sys.argv) > 1 else ".")
 
 EXO_CAPTION_STYLE = """
 public static CaptionStyleCompat getCaptionStyle() {
-        if (PlayerSetting.isCaption()) {
-            return CaptionStyleCompat.createFromCaptionStyle(((CaptioningManager) App.get().getSystemService(Context.CAPTIONING_SERVICE)).getUserStyle());
-        }
-        int fg = Setting.getSubtitleColorArgb();
+        // 个性设置优先；内封 ASS 文字轨由 setApplyEmbeddedStyles(false) 避免覆盖
+        try { com.fongmi.android.tv.subtitle.SubtitleFontManager.prepareAllFonts(); } catch (Throwable ignored) {}
+        int fg = Color.WHITE;
+        try { fg = Setting.getSubtitleColorArgb(); } catch (Throwable ignored) {}
         android.graphics.Typeface tf = null;
+        try { tf = Setting.getSubtitleTypeface(); } catch (Throwable ignored) {}
+        if (tf == null) tf = android.graphics.Typeface.SANS_SERIF;
         try {
-            tf = Setting.getSubtitleTypeface();
-        } catch (Throwable ignored) {
-        }
+            android.util.Log.i("SubtitleStyle", "getCaptionStyle fg=#" + Integer.toHexString(fg)
+                + " tf=" + (tf != null ? tf.toString() : "null")
+                + " fontId=" + Setting.getSubtitleFontId());
+        } catch (Throwable ignored) {}
         return new CaptionStyleCompat(fg, Color.TRANSPARENT, Color.TRANSPARENT, CaptionStyleCompat.EDGE_TYPE_OUTLINE, Color.BLACK, tf);
     }
 """.strip()
@@ -123,7 +126,16 @@ def patch_exo(path: Path) -> None:
         )
     t = t.replace(
         "view.getSubtitleView().setApplyEmbeddedStyles(true);",
+        "view.getSubtitleView().setApplyEmbeddedStyles(false);",
+    )
+    t = t.replace(
         "view.getSubtitleView().setApplyEmbeddedStyles(PlayerSetting.isCaption());",
+        "view.getSubtitleView().setApplyEmbeddedStyles(false);",
+    )
+    # 顺序：先关 embedded 再 setStyle
+    t = t.replace(
+        "view.getSubtitleView().setStyle(getCaptionStyle());\n        view.getSubtitleView().setApplyEmbeddedStyles(false);",
+        "view.getSubtitleView().setApplyEmbeddedStyles(false);\n        view.getSubtitleView().setStyle(getCaptionStyle());",
     )
     pat = re.compile(r"public static CaptionStyleCompat getCaptionStyle\(\)\s*\{[^}]*\}", re.S)
     if pat.search(t):
@@ -331,8 +343,126 @@ def patch_mpv_options_apply(path: Path) -> None:
         print("[mod] no sub-ass-override string in", path.name)
 
 
+
+
+def patch_exo_ass_session(path: Path) -> None:
+    """Disable native libass session so SubtitleView + getCaptionStyle can stick.
+
+    Root cause of style flash-then-revert: ExoAssSession becomes ACTIVE and paints
+    original ASS on an overlay, covering SubtitleView user styles.
+    """
+    if not path.exists():
+        print("[mod] skip missing", path)
+        return
+    text = path.read_text(encoding="utf-8")
+    orig = text
+    if "user style path" in text and "createIfEnabled" in text:
+        print("[mod] ExoAssSession already patched")
+        return
+    new_body = (
+        "public static ExoAssSession createIfEnabled(Context context, boolean tunneling) {\n"
+        "        // User color/font via SubtitleView; native ASS ACTIVE covers settings after first frames\n"
+        "        try {\n"
+        "            android.util.Log.i(\"SubtitleStyle\", \"ExoAssSession.createIfEnabled -> null (user style path)\");\n"
+        "        } catch (Throwable ignored) {}\n"
+        "        return null;\n"
+        "    }"
+    )
+    pat = re.compile(
+        r"public static ExoAssSession createIfEnabled\(Context context, boolean tunneling\)\s*\{[^}]*\}",
+        re.S,
+    )
+    if pat.search(text):
+        text = pat.sub(new_body, text, count=1)
+        path.write_text(text, encoding="utf-8")
+        print("[mod] ExoAssSession.createIfEnabled -> null (user style)")
+    else:
+        print("[mod] WARN ExoAssSession.createIfEnabled not found")
+
+
+def patch_ass_fonts_user_dir(path: Path) -> None:
+    if not path.exists():
+        return
+    text = path.read_text(encoding="utf-8")
+    if "subtitle_fonts" in text:
+        print("[mod] AssFonts already has subtitle_fonts")
+        return
+    needle = 'for (String path : new String[]{"/system/fonts"'
+    if needle not in text:
+        print("[mod] WARN AssFonts.prepare dir loop not found")
+        return
+    insert = (
+        "try {\n"
+        '            File userFonts = new File(context.getFilesDir(), "subtitle_fonts");\n'
+        "            if (userFonts.isDirectory() && userFonts.canRead()) directories.add(userFonts);\n"
+        "        } catch (Throwable ignored) {}\n"
+        "        " + needle
+    )
+    text = text.replace(needle, insert, 1)
+    path.write_text(text, encoding="utf-8")
+    print("[mod] AssFonts.prepare + subtitle_fonts dir")
+
+
+def patch_exo_reapply_hook(path: Path) -> None:
+    if not path.exists():
+        return
+    text = path.read_text(encoding="utf-8")
+    if "reapplySubtitleStyle" in text:
+        print("[mod] ExoUtil.reapplySubtitleStyle already")
+        return
+    if "public static void setPlayerView(PlayerView view)" not in text:
+        print("[mod] WARN setPlayerView not found")
+        return
+    if "sLastPlayerView" not in text:
+        text = text.replace(
+            "public class ExoUtil {",
+            "public class ExoUtil {\n\n"
+            "    private static java.lang.ref.WeakReference<PlayerView> sLastPlayerView;\n",
+            1,
+        )
+    text = text.replace(
+        "public static void setPlayerView(PlayerView view) {\n"
+        "        view.setRender(PlayerSetting.getRender());",
+        "public static void setPlayerView(PlayerView view) {\n"
+        "        sLastPlayerView = new java.lang.ref.WeakReference<>(view);\n"
+        "        view.setRender(PlayerSetting.getRender());",
+        1,
+    )
+    helper = """
+
+    /** Re-apply caption style on current PlayerView after settings change. */
+    public static void reapplySubtitleStyle() {
+        try {
+            PlayerView view = sLastPlayerView == null ? null : sLastPlayerView.get();
+            if (view == null || view.getSubtitleView() == null) return;
+            view.getSubtitleView().setApplyEmbeddedStyles(false);
+            view.getSubtitleView().setStyle(getCaptionStyle());
+            android.util.Log.i("SubtitleStyle", "reapplySubtitleStyle ok");
+        } catch (Throwable e) {
+            android.util.Log.w("SubtitleStyle", "reapplySubtitleStyle: " + e.getMessage());
+        }
+    }
+"""
+    m = re.search(
+        r"(public static void setPlayerView\(PlayerView view\)\s*\{[\s\S]*?\n    \})",
+        text,
+    )
+    if m:
+        text = text[: m.end()] + helper + text[m.end() :]
+        print("[mod] ExoUtil.reapplySubtitleStyle added")
+    else:
+        print("[mod] WARN cannot insert reapplySubtitleStyle")
+    path.write_text(text, encoding="utf-8")
+
+
+
 def main() -> None:
+    # EXO focus this iteration
     patch_exo(ROOT / "app/src/main/java/com/fongmi/android/tv/player/exo/ExoUtil.java")
+    patch_exo_reapply_hook(ROOT / "app/src/main/java/com/fongmi/android/tv/player/exo/ExoUtil.java")
+    patch_exo_ass_session(ROOT / "app/src/main/java/com/fongmi/android/tv/player/exo/ass/ExoAssSession.java")
+    patch_ass_fonts_user_dir(ROOT / "app/src/main/java/com/fongmi/android/tv/player/exo/ass/AssFonts.java")
+    # MPV: keep existing patches only, no new logic
     mpv = ROOT / "app/src/main/java/androidx/media3/mpvplayer/MpvPlayer.java"
     patch_mpv_player(mpv)
     patch_mpv_options_apply(mpv)

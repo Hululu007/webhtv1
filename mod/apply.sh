@@ -11,13 +11,13 @@ fi
 MOD="$(cd "$(dirname "$0")" && pwd)"
 echo "[mod] root=$ROOT"
 
-# 同步根目录 fonts/ 到 assets（若有 yahei/youyuan/kaiti）
+# 同步根目录 fonts/ 到 assets（kaiti/heiyuan/xiyuan）
 sync_subtitle_fonts() {
   local src_dir="$MOD/fonts"
   local dst_dir="$MOD/app/src/main/assets/fonts"
   mkdir -p "$dst_dir"
   if [[ -d "$src_dir" ]]; then
-    for id in yahei youyuan kaiti; do
+    for id in kaiti heiyuan xiyuan; do
       for ext in ttf otf TTF OTF ttc TTC ""; do
         local f
         if [[ -n "$ext" ]]; then f="$src_dir/${id}.${ext}"; else f="$src_dir/${id}"; fi
@@ -146,6 +146,7 @@ run_hook "$MOD/hooks/inject_home_push.py"
 run_hook "$MOD/hooks/inject_live_default_fullscreen.py"
 run_hook "$MOD/hooks/inject_webview_live.py"
 run_hook "$MOD/hooks/inject_eac3_soft_audio.py"
+run_hook "$MOD/hooks/inject_track_selector_context.py"
 run_hook "$MOD/hooks/inject_pan_prefer.py"
 run_hook "$MOD/hooks/inject_hide_type_more.py"
 run_hook "$MOD/hooks/inject_home_row_order.py"

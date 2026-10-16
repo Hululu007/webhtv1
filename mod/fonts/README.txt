@@ -1,1 +1,1 @@
-Put yahei.ttf / youyuan.ttf / kaiti.ttf here OR under app/src/main/assets/fonts/
+Place: kaiti / heiyuan / xiyuan (.ttf/.otf)

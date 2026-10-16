@@ -448,7 +448,43 @@ jobs:
           else
             echo "No mod/apply.sh, skip"
           fi
-      
+      - name: Disable MPV (inject + verify)
+        if: steps.should_build.outputs.build == 'true'
+        run: |
+          set -euo pipefail
+          if [ ! -f mod/hooks/inject_disable_mpv.py ]; then
+            echo "ERROR: mod/hooks/inject_disable_mpv.py missing"
+            exit 1
+          fi
+          python3 mod/hooks/inject_disable_mpv.py .
+          echo "---- post-inject proof ----"
+          grep -n "MPV_DISABLED" app/src/main/java/com/fongmi/android/tv/setting/PlayerSetting.java || true
+          grep -n "MPV_DISABLED" app/src/main/java/com/fongmi/android/tv/player/PlayerManager.java || true
+          grep -n "MPV_DISABLED" app/src/main/java/com/fongmi/android/tv/ui/dialog/PlayerKernelDialog.java || true
+          if grep -q "new MpvPlayerEngine" app/src/main/java/com/fongmi/android/tv/player/PlayerManager.java; then
+            echo "ERROR: new MpvPlayerEngine still present"
+            exit 1
+          fi
+          if ! grep -q "MPV_DISABLED: never construct MpvPlayerEngine" app/src/main/java/com/fongmi/android/tv/player/PlayerManager.java; then
+            echo "ERROR: buildEngine guard missing"
+            exit 1
+          fi
+          if ! grep -q "MPV_DISABLED: only EXO / IJK" app/src/main/java/com/fongmi/android/tv/ui/dialog/PlayerKernelDialog.java; then
+            echo "ERROR: PlayerKernelDialog not patched"
+            exit 1
+          fi
+          echo "MPV disable verified"
+      - name: Strip MPV native assets (phase 2)
+        if: steps.should_build.outputs.build == 'true'
+        run: |
+          set -euo pipefail
+          python3 mod/hooks/inject_strip_mpv_assets.py .
+          if find app -path '*/mpv-libs/*.so' 2>/dev/null | grep -q .; then
+            echo "ERROR: mpv-libs .so still present"
+            find app -path '*/mpv-libs/*.so'
+            exit 1
+          fi
+          echo "MPV native strip verified"
       - name: Relax Gradle Daemon JVM lock
         if: steps.should_build.outputs.build == 'true'
         run: |

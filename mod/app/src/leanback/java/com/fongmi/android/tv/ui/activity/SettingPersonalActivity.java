@@ -198,6 +198,7 @@ public class SettingPersonalActivity extends BaseActivity {
 
     private void setSubtitleColor(View view) {
         Setting.cycleSubtitleColor();
+        try { com.fongmi.android.tv.subtitle.AssrtSubtitleMatch.notifySubtitleStyleChanged(); } catch (Throwable ignored) {}
         refreshTexts();
     }
 
@@ -304,7 +305,9 @@ public class SettingPersonalActivity extends BaseActivity {
         int src = Setting.getRecommendSource();
         src = (src + 1) % 4;
         Setting.putRecommendSource(src);
-        try { mBinding.recommendSourceText.setText(recommendSourceLabel()); } catch (Throwable ignored) {}
+        try { mBinding.recommendSourceText.setText(recommendSourceLabel()); 
+        try { refreshTexts(); } catch (Throwable ignored) {}
+    } catch (Throwable ignored) {}
     }
 
 
