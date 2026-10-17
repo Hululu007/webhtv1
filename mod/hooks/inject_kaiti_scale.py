@@ -25,8 +25,7 @@ INLINE_APPLY = r'''
                 if (__size > 0.15f) __size = 0.15f;
                 __SV__.setFractionalTextSize(__size);
                 try {
-                    com.fongmi.android.tv.utils.ModDebug/* log silenced */
-                } catch (Throwable ignored) {}
+                    /* log silenced */} catch (Throwable ignored) {}
             } catch (Throwable ignored) {
             }
 '''

@@ -1161,8 +1161,7 @@ public class Setting {
             }
         }
         try {
-            android.util./* Log.i silenced */
-        } catch (Throwable ignored) {
+            /* log silenced */} catch (Throwable ignored) {
         }
     }
 

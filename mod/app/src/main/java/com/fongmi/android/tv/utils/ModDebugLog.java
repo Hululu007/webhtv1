@@ -1,7 +1,9 @@
 package com.fongmi.android.tv.utils;
 
 import android.content.Context;
-import android.util.Log;
+
+import com.fongmi.android.tv.App;
+import com.github.catvod.utils.Prefers;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -10,19 +12,14 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
 
-import com.github.catvod.utils.Prefers;
-
 /**
- * 魔改调试日志：默认不写 logcat；需要时写入 {@code cache/mod_debug/}，
- * 随应用「清除缓存」一并删除。
- * <p>
- * 打开方式：{@code Prefers.put("mod_debug_log", true)} 或调用 {@link #setEnabled(boolean)}。
+ * 魔改日志：例行 Info 默认关闭；失败 {@link #w} 始终写入
+ * {@code context.getCacheDir()/mod_debug/mod.log}，清缓存即删。不写 logcat。
  */
 public final class ModDebugLog {
 
-    private static final String TAG = "ModDebug";
     private static final String PREF = "mod_debug_log";
-    private static final long MAX_BYTES = 2L * 1024 * 1024; // 单文件约 2MB，超出截断
+    private static final long MAX_BYTES = 2L * 1024 * 1024;
     private static volatile Boolean enabled;
     private static volatile File logFile;
 
@@ -44,10 +41,9 @@ public final class ModDebugLog {
         } catch (Throwable t) {
             enabled = false;
         }
-        return enabled;
+        return Boolean.TRUE.equals(enabled);
     }
 
-    /** 初始化输出路径（建议 Application.onCreate 调一次，不调也能惰性创建） */
     public static void init(Context context) {
         if (context == null) return;
         try {
@@ -60,23 +56,23 @@ public final class ModDebugLog {
     }
 
     public static void i(String tag, String msg) {
-        write("I", tag, msg);
+        if (!isEnabled()) return;
+        writeForce("I", tag, msg);
     }
 
     public static void w(String tag, String msg) {
-        write("W", tag, msg);
+        writeForce("W", tag, msg);
     }
 
-    private static void write(String level, String tag, String msg) {
-        if (!isEnabled()) return;
+    private static void writeForce(String level, String tag, String msg) {
         String line = new SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US).format(new Date())
-                + " " + level + "/" + (tag == null ? TAG : tag) + ": "
+                + " " + level + "/" + (tag == null ? "ModDebug" : tag) + ": "
                 + (msg == null ? "" : msg) + "\n";
         try {
             File f = logFile;
             if (f == null) {
                 try {
-                    Context ctx = com.fongmi.android.tv.App.get();
+                    Context ctx = App.get();
                     if (ctx != null) init(ctx);
                     f = logFile;
                 } catch (Throwable ignored) {
@@ -84,7 +80,6 @@ public final class ModDebugLog {
             }
             if (f == null) return;
             if (f.length() > MAX_BYTES) {
-                // 简单截断：过大则删除重建
                 // noinspection ResultOfMethodCallIgnored
                 f.delete();
             }
@@ -92,10 +87,6 @@ public final class ModDebugLog {
                 out.write(line.getBytes(StandardCharsets.UTF_8));
             }
         } catch (Throwable ignored) {
-        }
-        // 仅在显式打开调试时同步一份到 logcat，默认关闭时这里不会执行
-        if ("W".equals(level)) {
-            Log.w(tag, msg);
         }
     }
 }

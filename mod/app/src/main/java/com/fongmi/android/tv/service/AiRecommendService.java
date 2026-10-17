@@ -154,7 +154,7 @@ public final class AiRecommendService {
                 arr = el.getAsJsonArray();
             }
             if (arr == null) {
-                Log.w(TAG, "no items array, body=" + excerpt(content));
+                com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "no items array, body=" + excerpt(content));
                 return items;
             }
             Map<String, Item> dedupe = new LinkedHashMap<>();
@@ -175,7 +175,7 @@ public final class AiRecommendService {
             items.addAll(dedupe.values());
             /* Log.i silenced */
         } catch (Exception e) {
-            Log.w(TAG, "parse fail: " + e.getMessage() + " body=" + excerpt(content));
+            com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "parse fail: " + e.getMessage() + " body=" + excerpt(content));
         }
         return items;
     }

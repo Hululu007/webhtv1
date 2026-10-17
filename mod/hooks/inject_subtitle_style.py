@@ -105,8 +105,7 @@ APPLY_METHOD = r"""
             // 禁止写任何 Map，避免 ClassCastException
             /* log silenced */
         } catch (Throwable e) {
-            android.util./* log silenced */
-        }
+            /* log silenced */}
     }
 """
 
@@ -437,8 +436,7 @@ def patch_exo_reapply_hook(path: Path) -> None:
             view.getSubtitleView().setStyle(getCaptionStyle());
             /* log silenced */
         } catch (Throwable e) {
-            android.util./* log silenced */
-        }
+            /* log silenced */}
     }
 """
     m = re.search(

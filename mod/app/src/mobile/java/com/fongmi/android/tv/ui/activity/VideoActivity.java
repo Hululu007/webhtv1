@@ -3344,8 +3344,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
 
     private void generateKaraokeTrack() {
         List<LyricsLine> lines = getKaraokeGenerationLines();
-        android.util./* Log.i silenced */
-        if (service() == null || !KaraokeTrackRepository.canGenerate(lines)) {
+        /* log silenced */if (service() == null || !KaraokeTrackRepository.canGenerate(lines)) {
             Notify.show(R.string.player_karaoke_track_generate_no_lyrics);
             return;
         }
@@ -3366,8 +3365,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     private void generateKaraokePitchTrack() {
         List<LyricsLine> lines = getKaraokeGenerationLines();
         KaraokeTrackRepository.MediaInput input = service() == null ? null : KaraokeTrackRepository.snapshot(player());
-        android.util./* Log.i silenced */
-        if (!KaraokeTrackRepository.canGeneratePitch(input, lines)) {
+        /* log silenced */if (!KaraokeTrackRepository.canGeneratePitch(input, lines)) {
             Notify.show(R.string.player_karaoke_track_generate_no_lyrics);
             return;
         }
