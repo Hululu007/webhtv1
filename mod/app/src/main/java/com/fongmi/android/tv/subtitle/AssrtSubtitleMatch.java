@@ -772,7 +772,7 @@ public final class AssrtSubtitleMatch {
 
 
 
-    /** 用户点选：仅外挂需要记忆；内封不再记忆（起播统一优先中文） */
+    /** 用户点选：外挂与内封均记忆；历史进入优先恢复上次选择 */
     public static void rememberChosenTrack(PlayerManager player, Track item) {
         try {
             if (item == null || item.getType() != C.TRACK_TYPE_TEXT) return;
@@ -798,16 +798,43 @@ public final class AssrtSubtitleMatch {
                     || nl.contains(".srt") || nl.contains(".ass") || nl.contains(".ssa") || nl.contains(".vtt")
                     || looksLikeHashFileName(name);
             if (!external) {
-                // 内封：跨集记住「格式 + 简繁」，供下一集 preferChinese 加权
+                // 内封：记住本次选择，历史记录再次进入时可恢复（并保留简繁/格式偏好加权）
                 sPreferExternal = false;
                 String embFmt = detectSubFormat(name, fmt);
                 String embLang = detectSubLang(name, item.getName());
-                // item 可能无独立 language 字段，再从 name 抽
                 if (TextUtils.isEmpty(embLang) || "zh".equals(embLang)) {
                     embLang = detectSubLang(name, "");
                 }
                 saveEmbeddedPrefs(embFmt, embLang);
-                
+                sPendingSelectName = name;
+                sPendingSelectFormat = item.getFormat() == null ? "" : item.getFormat();
+                sPendingSelectLang = embLang == null ? "" : embLang;
+                sForceSettled = false;
+                try {
+                    if (player != null && !TextUtils.isEmpty(player.getKey())) {
+                        Track tr = new Track(C.TRACK_TYPE_TEXT, name,
+                                item.getFormat() == null ? "" : item.getFormat());
+                        tr.setKey(player.getKey());
+                        tr.setSelected(true);
+                        try {
+                            if (item.getPlayerId() != null) tr.setPlayerId(item.getPlayerId());
+                        } catch (Throwable ignored) {
+                        }
+                        tr.save();
+                    }
+                } catch (Throwable ignored) {
+                }
+                try {
+                    if (sLastHistory != null) {
+                        for (String key : subCacheKeys(sLastHistory, sLastEpisode)) {
+                            putCommit(key + "_kind", "embedded");
+                            putCommit(key + "_name", name);
+                            putCommit(key + "_lang", embLang == null ? "" : embLang);
+                            putCommit(key + "_fmt", embFmt == null ? "" : embFmt);
+                        }
+                    }
+                } catch (Throwable ignored) {
+                }
                 return;
             }
             sPendingSelectName = name;
@@ -1956,6 +1983,11 @@ public final class AssrtSubtitleMatch {
                 return false;
             }
             if (sPreferExternal) return false;
+            // 历史/上次内封选择优先于自动优选
+            try {
+                if (tryRestoreEmbedded(player)) return true;
+            } catch (Throwable ignored) {
+            }
             if (loadCachedSubPayload(sLastHistory, sLastEpisode) != null) return false;
             // 刚成功切轨后短时内不再反复切，避免 onTracks 风暴
             if (System.currentTimeMillis() < sPreferChineseSettleAt) {
