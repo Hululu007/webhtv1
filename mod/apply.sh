@@ -174,6 +174,10 @@ if [[ -f "$MOD/hooks/inject_disable_mpv.py" ]]; then
   echo "[mod] inject_disable_mpv"
   python3 "$MOD/hooks/inject_disable_mpv.py" "$ROOT" || exit 1
 fi
+if [[ -f "$MOD/hooks/inject_silence_mpv_size.py" ]]; then
+  echo "[mod] inject_silence_mpv_size"
+  python3 "$MOD/hooks/inject_silence_mpv_size.py" "$ROOT" || exit 1
+fi
 if [[ -f "$MOD/hooks/inject_strip_mpv_assets.py" ]]; then
   echo "[mod] inject_strip_mpv_assets"
   python3 "$MOD/hooks/inject_strip_mpv_assets.py" "$ROOT" || exit 1
