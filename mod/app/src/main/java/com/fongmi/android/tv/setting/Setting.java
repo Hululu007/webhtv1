@@ -1161,9 +1161,7 @@ public class Setting {
             }
         }
         try {
-            android.util.Log.i("SubtitleStyle", "applySubtitleViewTextSize base=" + base
-                    + " scale=" + scale + " size=" + size
-                    + " kaiti=" + isKaiTiLikeSubtitleFont());
+            android.util./* Log.i silenced */
         } catch (Throwable ignored) {
         }
     }

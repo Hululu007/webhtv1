@@ -82,7 +82,7 @@ public final class SubtitleFontManager {
         if (ID_SYSTEM.equals(id)) {
             Typeface tf = Typeface.SANS_SERIF;
             TYPEFACE_CACHE.put(id, tf);
-            Log.i(TAG, "using system Typeface.SANS_SERIF");
+            /* Log.i silenced */
             return tf;
         }
         Typeface tf = loadTypeface(id);
@@ -159,7 +159,7 @@ public final class SubtitleFontManager {
                 try {
                     Typeface tf = Typeface.createFromAsset(ctx.getAssets(), assetPath);
                     if (tf != null) {
-                        Log.i(TAG, "loaded typeface from assets/" + assetPath);
+                        /* Log.i silenced */
                         return tf;
                     }
                 } catch (Throwable ignored) {
@@ -169,7 +169,7 @@ public final class SubtitleFontManager {
             if (f != null && f.isFile()) {
                 Typeface tf = Typeface.createFromFile(f);
                 if (tf != null) {
-                    Log.i(TAG, "loaded typeface from file " + f.getAbsolutePath());
+                    /* Log.i silenced */
                     return tf;
                 }
             }
@@ -214,7 +214,7 @@ public final class SubtitleFontManager {
                         while ((n = in.read(buf)) > 0) fos.write(buf, 0, n);
                     }
                     if (out.isFile() && out.length() > 1000) {
-                        Log.i(TAG, "extracted font " + name);
+                        /* Log.i silenced */
                         return out;
                     }
                 } catch (Throwable ignored) {

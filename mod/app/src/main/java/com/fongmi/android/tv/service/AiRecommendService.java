@@ -72,7 +72,7 @@ public final class AiRecommendService {
         AiConfig config = Setting.getAiConfig();
         if (!config.isRecommendationEnabled()) throw new IllegalStateException("ai_recommend_off");
         String prompt = buildPrompt(current, currentTitle);
-        Log.i(TAG, "prompt chars=" + prompt.length() + " title=" + currentTitle);
+        /* Log.i silenced */
         String content = AiCompletionClient.complete(config, prompt);
         String exclude = currentTitle;
         if (TextUtils.isEmpty(exclude) && current != null) exclude = current.getName();
@@ -173,7 +173,7 @@ public final class AiRecommendService {
                 if (!dedupe.containsKey(key)) dedupe.put(key, new Item(title, year, type, reason));
             }
             items.addAll(dedupe.values());
-            Log.i(TAG, "parsed " + items.size());
+            /* Log.i silenced */
         } catch (Exception e) {
             Log.w(TAG, "parse fail: " + e.getMessage() + " body=" + excerpt(content));
         }

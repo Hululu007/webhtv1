@@ -236,7 +236,7 @@ public class WebViewPlayer {
     }
 
     private static void logI(String msg) {
-        try { Log.i(TAG, msg); } catch (Throwable ignored) {}
+        try { /* Log.i silenced */ } catch (Throwable ignored) {}
         try { SpiderDebug.log(TAG, "%s", msg); } catch (Throwable ignored) {}
     }
 

@@ -16,9 +16,7 @@ public static CaptionStyleCompat getCaptionStyle() {
         try { tf = Setting.getSubtitleTypeface(); } catch (Throwable ignored) {}
         if (tf == null) tf = android.graphics.Typeface.SANS_SERIF;
         try {
-            android.util.Log.i("SubtitleStyle", "getCaptionStyle fg=#" + Integer.toHexString(fg)
-                + " tf=" + (tf != null ? tf.toString() : "null")
-                + " fontId=" + Setting.getSubtitleFontId());
+            /* log silenced */
         } catch (Throwable ignored) {}
         return new CaptionStyleCompat(fg, Color.TRANSPARENT, Color.TRANSPARENT, CaptionStyleCompat.EDGE_TYPE_OUTLINE, Color.BLACK, tf);
     }
@@ -105,9 +103,9 @@ APPLY_METHOD = r"""
                 }
             }
             // 禁止写任何 Map，避免 ClassCastException
-            android.util.Log.i("MpvSubStyle", "applyUserAssStyle ok=" + ok + " font=" + font + " id=" + id + " dir=" + fontsDir + " how=" + lastErr);
+            /* log silenced */
         } catch (Throwable e) {
-            android.util.Log.w("MpvSubStyle", "applyUserAssStyle: " + e.getMessage());
+            android.util./* log silenced */
         }
     }
 """
@@ -363,7 +361,7 @@ def patch_exo_ass_session(path: Path) -> None:
         "public static ExoAssSession createIfEnabled(Context context, boolean tunneling) {\n"
         "        // User color/font via SubtitleView; native ASS ACTIVE covers settings after first frames\n"
         "        try {\n"
-        "            android.util.Log.i(\"SubtitleStyle\", \"ExoAssSession.createIfEnabled -> null (user style path)\");\n"
+        "            /* log silenced */\n"
         "        } catch (Throwable ignored) {}\n"
         "        return null;\n"
         "    }"
@@ -437,9 +435,9 @@ def patch_exo_reapply_hook(path: Path) -> None:
             if (view == null || view.getSubtitleView() == null) return;
             view.getSubtitleView().setApplyEmbeddedStyles(false);
             view.getSubtitleView().setStyle(getCaptionStyle());
-            android.util.Log.i("SubtitleStyle", "reapplySubtitleStyle ok");
+            /* log silenced */
         } catch (Throwable e) {
-            android.util.Log.w("SubtitleStyle", "reapplySubtitleStyle: " + e.getMessage());
+            android.util./* log silenced */
         }
     }
 """

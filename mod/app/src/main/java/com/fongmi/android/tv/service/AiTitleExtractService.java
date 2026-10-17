@@ -28,7 +28,7 @@ public final class AiTitleExtractService {
             String content = AiCompletionClient.complete(config, PROMPT + rawTitle.trim());
             String title = parseTitle(content);
             if (!TextUtils.isEmpty(title)) {
-                Log.i(TAG, "extract " + rawTitle + " -> " + title);
+                /* Log.i silenced */
                 return title;
             }
         } catch (Exception e) {
