@@ -865,7 +865,7 @@ public final class AssrtSubtitleMatch {
             } catch (Throwable ignored) {
             }
             persistChosenNameOnly(name, item.getFormat() == null ? "" : item.getFormat());
-            Log.i(TAG, "rememberChosenTrack external name=" + name);
+            
         } catch (Throwable e) {
             Log.w(TAG, "rememberChosenTrack: " + e.getMessage());
         }
@@ -2064,7 +2064,7 @@ public final class AssrtSubtitleMatch {
                 }
             }
             if (bestGroup == null || bestIndex < 0) {
-                Log.i(TAG, "preferChineseEmbedded none");
+                
                 return false;
             }
             String selLabel = bestFmt != null && bestFmt.label != null ? bestFmt.label : "中文";
@@ -2081,7 +2081,7 @@ public final class AssrtSubtitleMatch {
             
 
             // 与 forceSelectExternalViaMedia3 相同路径：engine 字段 → getPlayer/getExoPlayer
-            Log.i(TAG, "preferChineseEmbedded switching score=" + bestScore + " label=" + selLabel + " from=" + selectedScore);
+            
             androidx.media3.common.Player pl = resolveMedia3Player(player);
             boolean applied = false;
             if (pl != null) {
@@ -2110,7 +2110,7 @@ public final class AssrtSubtitleMatch {
                     Log.w(TAG, "preferChinese override: " + e.getMessage());
                 }
             } else {
-                Log.w(TAG, "preferChinese no Media3 Player from engine");
+                
             }
             try {
                 java.util.ArrayList<Track> list = new java.util.ArrayList<>();
@@ -2152,7 +2152,7 @@ public final class AssrtSubtitleMatch {
             } catch (Throwable ignored) {
             }
             
-            Log.i(TAG, "preferChineseEmbedded OK score=" + bestScore + " label=" + selLabel + " applied=" + applied + " verified=" + nowBest);
+            
             if (applied) {
                 sPreferChineseSettleAt = System.currentTimeMillis() + 2500L;
                 String lk = detectSubLang(selLabel, bestFmt != null ? bestFmt.language : "");
@@ -2235,7 +2235,7 @@ public final class AssrtSubtitleMatch {
                 }
             }
             if (bestGroup == null || bestIndex < 0 || bestScore < 25) {
-                Log.i(TAG, "tryRestoreEmbedded skip score=" + bestScore + " name=" + wantName + " idx=" + wantIdx);
+                
                 return false;
             }
             String selLabel = bestFmt != null && bestFmt.label != null ? bestFmt.label : wantName;
@@ -2270,7 +2270,7 @@ public final class AssrtSubtitleMatch {
             } catch (Throwable e) {
                 Log.w(TAG, "tryRestoreEmbedded setTrack: " + e.getMessage());
             }
-            Log.i(TAG, "tryRestoreEmbedded OK score=" + bestScore + " label=" + selLabel + " name=" + wantName + " idx=" + wantIdx);
+            
             return true;
         } catch (Throwable e) {
             Log.w(TAG, "tryRestoreEmbedded: " + e.getMessage());
