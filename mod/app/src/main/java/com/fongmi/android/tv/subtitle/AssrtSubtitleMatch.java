@@ -77,6 +77,9 @@ public final class AssrtSubtitleMatch {
     private static volatile String sPendingSelectLang = "";
     private static volatile int sPendingSelectIndex = -1;
     private static volatile long sPreferChineseSettleAt = 0L;
+    /** 用户/历史已选定内封后，在此时间前禁止 preferChinese 抢轨 */
+    private static volatile long sUserEmbeddedStickyUntil = 0L;
+    private static volatile String sStickyEmbeddedName = "";
     /** 用户选过的内封字幕偏好（跨集记住类型）：ass / srt / pgs / "" */
     private static volatile String sEmbeddedPreferFormat = "";
     /** 用户选过的内封语言偏好：simp / trad / zh / "" */
@@ -824,6 +827,7 @@ public final class AssrtSubtitleMatch {
                     }
                 } catch (Throwable ignored) {
                 }
+                markEmbeddedSticky(name);
                 try {
                     if (sLastHistory != null) {
                         for (String key : subCacheKeys(sLastHistory, sLastEpisode)) {
@@ -1974,6 +1978,13 @@ public final class AssrtSubtitleMatch {
     }
 
 
+    
+    private static void markEmbeddedSticky(String name) {
+        sStickyEmbeddedName = name == null ? "" : name;
+        sUserEmbeddedStickyUntil = System.currentTimeMillis() + 120_000L; // 2 分钟内不抢
+        sPreferChineseSettleAt = sUserEmbeddedStickyUntil;
+    }
+
     private static boolean preferChineseEmbedded(PlayerManager player) {
         try {
             if (player == null) return false;
@@ -1983,9 +1994,16 @@ public final class AssrtSubtitleMatch {
                 return false;
             }
             if (sPreferExternal) return false;
+            // 用户/历史已选内封：保护窗口内绝不自动抢轨
+            if (System.currentTimeMillis() < sUserEmbeddedStickyUntil) {
+                return true;
+            }
             // 历史/上次内封选择优先于自动优选
             try {
-                if (tryRestoreEmbedded(player)) return true;
+                if (tryRestoreEmbedded(player)) {
+                    markEmbeddedSticky(sPendingSelectName);
+                    return true;
+                }
             } catch (Throwable ignored) {
             }
             if (loadCachedSubPayload(sLastHistory, sLastEpisode) != null) return false;
@@ -2044,7 +2062,24 @@ public final class AssrtSubtitleMatch {
             String selLabel = bestFmt != null && bestFmt.label != null ? bestFmt.label : "中文";
             String selMime = bestFmt != null && bestFmt.sampleMimeType != null ? bestFmt.sampleMimeType : "";
             // 已选且分数不低于最优 → 不动（避免反复 setTrack）
-            if (selectedGroup == bestGroup && selectedIndex == bestIndex) {
+                        // 粘性名称仍在已选中则不切换
+            try {
+                if (!TextUtils.isEmpty(sStickyEmbeddedName) && System.currentTimeMillis() < sUserEmbeddedStickyUntil) {
+                    for (Tracks.Group group : tracks.getGroups()) {
+                        if (group.getType() != C.TRACK_TYPE_TEXT) continue;
+                        for (int i = 0; i < group.length; i++) {
+                            if (!group.isTrackSelected(i)) continue;
+                            Format f = group.getTrackFormat(i);
+                            String lab = f.label != null ? f.label : "";
+                            if (sStickyEmbeddedName.equals(lab) || sStickyEmbeddedName.contains(lab) || lab.contains(sStickyEmbeddedName)) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+if (selectedGroup == bestGroup && selectedIndex == bestIndex) {
                 
                 return true;
             }
@@ -2239,7 +2274,7 @@ public final class AssrtSubtitleMatch {
                 Log.w(TAG, "tryRestoreEmbedded setTrack: " + e.getMessage());
             }
             Log.i(TAG, "tryRestoreEmbedded OK score=" + bestScore + " label=" + selLabel + " name=" + wantName + " idx=" + wantIdx);
-            return true;
+            markEmbeddedSticky(sPendingSelectName); return true;
         } catch (Throwable e) {
             Log.w(TAG, "tryRestoreEmbedded: " + e.getMessage());
             return false;
