@@ -807,8 +807,7 @@ public final class AssrtSubtitleMatch {
                     embLang = detectSubLang(name, "");
                 }
                 saveEmbeddedPrefs(embFmt, embLang);
-                Log.i(TAG, "rememberChosenTrack embedded prefs name=" + name
-                        + " format=" + embFmt + " lang=" + embLang);
+                
                 return;
             }
             sPendingSelectName = name;
@@ -1315,7 +1314,7 @@ public final class AssrtSubtitleMatch {
                 }
             }
             if (TextUtils.isEmpty(raw)) {
-                Log.i(TAG, "restore miss no cache");
+                // restore miss silenced
                 return false;
             }
             String[] parts = raw.split("\u0001", -1);
@@ -1826,7 +1825,7 @@ public final class AssrtSubtitleMatch {
                 sEmbeddedPreferLang = lang;
                 Prefers.put(PREF_EMB_LANG, lang);
             }
-            Log.i(TAG, "saveEmbeddedPrefs format=" + sEmbeddedPreferFormat + " lang=" + sEmbeddedPreferLang);
+            
         } catch (Throwable e) {
             Log.w(TAG, "saveEmbeddedPrefs: " + e.getMessage());
         }
@@ -1960,7 +1959,7 @@ public final class AssrtSubtitleMatch {
             if (loadCachedSubPayload(sLastHistory, sLastEpisode) != null) return false;
             // 刚成功切轨后短时内不再反复切，避免 onTracks 风暴
             if (System.currentTimeMillis() < sPreferChineseSettleAt) {
-                Log.i(TAG, "preferChineseEmbedded settle skip");
+                // preferChinese log silenced
                 return true;
             }
             Tracks tracks;
@@ -2007,22 +2006,21 @@ public final class AssrtSubtitleMatch {
                 }
             }
             if (bestGroup == null || bestIndex < 0) {
-                Log.i(TAG, "preferChineseEmbedded none");
+                // preferChinese log silenced
                 return false;
             }
             String selLabel = bestFmt != null && bestFmt.label != null ? bestFmt.label : "中文";
             String selMime = bestFmt != null && bestFmt.sampleMimeType != null ? bestFmt.sampleMimeType : "";
             // 已选且分数不低于最优 → 不动（避免反复 setTrack）
             if (selectedGroup == bestGroup && selectedIndex == bestIndex) {
-                Log.i(TAG, "preferChineseEmbedded already best score=" + bestScore + " label=" + selLabel);
+                
                 return true;
             }
             if (selectedScore >= bestScore && selectedScore > 0) {
-                Log.i(TAG, "preferChineseEmbedded already best score=" + selectedScore);
+                
                 return true;
             }
-            Log.i(TAG, "preferChineseEmbedded switching to better score=" + bestScore
-                    + " label=" + selLabel + " fromSelected=" + selectedScore);
+            
 
             // 与 forceSelectExternalViaMedia3 相同路径：engine 字段 → getPlayer/getExoPlayer
             androidx.media3.common.Player pl = resolveMedia3Player(player);
@@ -2048,7 +2046,7 @@ public final class AssrtSubtitleMatch {
                     }
                     pl.setTrackSelectionParameters(b.build());
                     applied = true;
-                    Log.i(TAG, "preferChinese override applied label=" + selLabel);
+                    
                 } catch (Throwable e) {
                     Log.w(TAG, "preferChinese override: " + e.getMessage());
                 }
@@ -2072,9 +2070,7 @@ public final class AssrtSubtitleMatch {
                 try { tr.save(); } catch (Throwable ignored) {}
                 list.add(tr);
                 player.setTrack(list);
-                Log.i(TAG, "preferChinese setTrack name=" + selLabel
-                        + " mime=" + selMime
-                        + " playerId=" + (bestFmt != null ? bestFmt.id : null));
+                
             } catch (Throwable e) {
                 Log.w(TAG, "preferChinese setTrack: " + e.getMessage());
             }
@@ -2096,10 +2092,7 @@ public final class AssrtSubtitleMatch {
                 }
             } catch (Throwable ignored) {
             }
-            Log.i(TAG, "preferChineseEmbedded OK score=" + bestScore + " label=" + selLabel
-                    + " fmt=" + detectSubFormat(selLabel, selMime)
-                    + " lang=" + detectSubLang(selLabel, bestFmt != null ? bestFmt.language : "")
-                    + " applied=" + applied + " verified=" + nowBest);
+            
             if (applied) sPreferChineseSettleAt = System.currentTimeMillis() + 2500L;
             return true;
         } catch (Throwable e) {
