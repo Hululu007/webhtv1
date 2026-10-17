@@ -32,7 +32,7 @@ public final class AiTitleExtractService {
                 return title;
             }
         } catch (Exception e) {
-            com.fongmi.android.tv.utils.ModDebugcom.fongmi.android.tv.utils.ModDebugLog.w(TAG, "extract fail: " + e.getMessage());
+            com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "extract fail: " + e.getMessage());
         }
         return rawTitle.trim();
     }

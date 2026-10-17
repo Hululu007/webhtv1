@@ -107,7 +107,7 @@ public final class SubtitleRestoreCoordinator {
         try {
             player.getClass().getMethod("setSub", Sub.class).invoke(player, sub);
         } catch (Throwable e) {
-            com.fongmi.android.tv.utils.ModDebugcom.fongmi.android.tv.utils.ModDebugLog.w(TAG, "setSub failed: " + e.getMessage());
+            com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "setSub failed: " + e.getMessage());
         }
     }
 
