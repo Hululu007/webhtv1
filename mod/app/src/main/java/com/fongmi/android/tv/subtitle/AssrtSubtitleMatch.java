@@ -925,7 +925,7 @@ public final class AssrtSubtitleMatch {
             // 无外挂记忆：延迟一次选中文内封
             sPreferExternal = false;
             final PlayerManager pm = player;
-            App.post(() -> preferChineseEmbedded(pm), 5000);
+            schedulePreferChinese(pm);
         } catch (Throwable e) {
             Log.w(TAG, "onTracksReady: " + e.getMessage());
         }
@@ -974,7 +974,7 @@ public final class AssrtSubtitleMatch {
                 try {
                     if (loadCachedSubPayload(history != null ? history : sLastHistory, episode != null ? episode : sLastEpisode) == null) {
                         final PlayerManager pmE = player;
-                        App.post(() -> preferChineseEmbedded(pmE), 5000);
+                        schedulePreferChinese(pmE);
                     }
                 } catch (Throwable ignoredEmb) {
                 }
@@ -1981,8 +1981,24 @@ public final class AssrtSubtitleMatch {
     
     private static void markEmbeddedSticky(String name) {
         sStickyEmbeddedName = name == null ? "" : name;
-        sUserEmbeddedStickyUntil = System.currentTimeMillis() + 120_000L; // 2 分钟内不抢
+        sUserEmbeddedStickyUntil = System.currentTimeMillis() + 3_000L;
         sPreferChineseSettleAt = sUserEmbeddedStickyUntil;
+    }
+
+    
+    /** 起播后多次静默尝试选简体，避免轨晚到或被其它逻辑覆盖 */
+    private static void schedulePreferChinese(PlayerManager player) {
+        if (player == null) return;
+        final PlayerManager pm = player;
+        long[] delays = new long[]{0L, 400L, 1200L, 3000L, 8000L};
+        for (long d : delays) {
+            App.post(() -> {
+                try {
+                    preferChineseEmbedded(pm);
+                } catch (Throwable ignored) {
+                }
+            }, d);
+        }
     }
 
     private static boolean preferChineseEmbedded(PlayerManager player) {
@@ -1995,23 +2011,15 @@ public final class AssrtSubtitleMatch {
             }
             if (sPreferExternal) return false;
             // 用户/历史已选内封：保护窗口内绝不自动抢轨
-            if (System.currentTimeMillis() < sUserEmbeddedStickyUntil) {
-                return true;
-            }
-            // 历史/上次内封选择优先于自动优选
+            // 不再用长粘性锁死错误轨；仅短 settle 防抖
+            // 历史恢复可先跑，但不 return：后面仍按分数升级到简体/ASS
             try {
-                if (tryRestoreEmbedded(player)) {
-                    markEmbeddedSticky(sPendingSelectName);
-                    return true;
-                }
+                tryRestoreEmbedded(player);
             } catch (Throwable ignored) {
             }
             if (loadCachedSubPayload(sLastHistory, sLastEpisode) != null) return false;
             // 刚成功切轨后短时内不再反复切，避免 onTracks 风暴
-            if (System.currentTimeMillis() < sPreferChineseSettleAt) {
-                // preferChinese log silenced
-                return true;
-            }
+            // short settle: still allow upgrade to higher score (e.g. simp)
             Tracks tracks;
             try {
                 tracks = player.getCurrentTracks();
@@ -2056,30 +2064,13 @@ public final class AssrtSubtitleMatch {
                 }
             }
             if (bestGroup == null || bestIndex < 0) {
-                // preferChinese log silenced
+                Log.i(TAG, "preferChineseEmbedded none");
                 return false;
             }
             String selLabel = bestFmt != null && bestFmt.label != null ? bestFmt.label : "中文";
             String selMime = bestFmt != null && bestFmt.sampleMimeType != null ? bestFmt.sampleMimeType : "";
             // 已选且分数不低于最优 → 不动（避免反复 setTrack）
-                        // 粘性名称仍在已选中则不切换
-            try {
-                if (!TextUtils.isEmpty(sStickyEmbeddedName) && System.currentTimeMillis() < sUserEmbeddedStickyUntil) {
-                    for (Tracks.Group group : tracks.getGroups()) {
-                        if (group.getType() != C.TRACK_TYPE_TEXT) continue;
-                        for (int i = 0; i < group.length; i++) {
-                            if (!group.isTrackSelected(i)) continue;
-                            Format f = group.getTrackFormat(i);
-                            String lab = f.label != null ? f.label : "";
-                            if (sStickyEmbeddedName.equals(lab) || sStickyEmbeddedName.contains(lab) || lab.contains(sStickyEmbeddedName)) {
-                                return true;
-                            }
-                        }
-                    }
-                }
-            } catch (Throwable ignored) {
-            }
-if (selectedGroup == bestGroup && selectedIndex == bestIndex) {
+                        if (selectedGroup == bestGroup && selectedIndex == bestIndex) {
                 
                 return true;
             }
@@ -2090,6 +2081,7 @@ if (selectedGroup == bestGroup && selectedIndex == bestIndex) {
             
 
             // 与 forceSelectExternalViaMedia3 相同路径：engine 字段 → getPlayer/getExoPlayer
+            Log.i(TAG, "preferChineseEmbedded switching score=" + bestScore + " label=" + selLabel + " from=" + selectedScore);
             androidx.media3.common.Player pl = resolveMedia3Player(player);
             boolean applied = false;
             if (pl != null) {
@@ -2160,7 +2152,12 @@ if (selectedGroup == bestGroup && selectedIndex == bestIndex) {
             } catch (Throwable ignored) {
             }
             
-            if (applied) sPreferChineseSettleAt = System.currentTimeMillis() + 2500L;
+            Log.i(TAG, "preferChineseEmbedded OK score=" + bestScore + " label=" + selLabel + " applied=" + applied + " verified=" + nowBest);
+            if (applied) {
+                sPreferChineseSettleAt = System.currentTimeMillis() + 2500L;
+                String lk = detectSubLang(selLabel, bestFmt != null ? bestFmt.language : "");
+                if ("simp".equals(lk) || "zh".equals(lk)) markEmbeddedSticky(selLabel);
+            }
             return true;
         } catch (Throwable e) {
             Log.w(TAG, "preferChineseEmbedded: " + e.getMessage());
@@ -2274,7 +2271,7 @@ if (selectedGroup == bestGroup && selectedIndex == bestIndex) {
                 Log.w(TAG, "tryRestoreEmbedded setTrack: " + e.getMessage());
             }
             Log.i(TAG, "tryRestoreEmbedded OK score=" + bestScore + " label=" + selLabel + " name=" + wantName + " idx=" + wantIdx);
-            markEmbeddedSticky(sPendingSelectName); return true;
+            return true;
         } catch (Throwable e) {
             Log.w(TAG, "tryRestoreEmbedded: " + e.getMessage());
             return false;
