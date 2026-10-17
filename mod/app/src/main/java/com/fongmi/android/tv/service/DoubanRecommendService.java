@@ -46,7 +46,7 @@ public final class DoubanRecommendService {
 
         String subjectId = resolveSubjectId(q);
         if (TextUtils.isEmpty(subjectId)) {
-            com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "no subject for " + q);
+            com.fongmi.android.tv.utils.ModDebugcom.fongmi.android.tv.utils.ModDebugLog.w(TAG, "no subject for " + q);
             return out;
         }
 
@@ -54,7 +54,7 @@ public final class DoubanRecommendService {
         try {
             out.addAll(loadRexxar(subjectId, q));
         } catch (Throwable e) {
-            com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "rexxar fail: " + e.getMessage());
+            com.fongmi.android.tv.utils.ModDebugcom.fongmi.android.tv.utils.ModDebugLog.w(TAG, "rexxar fail: " + e.getMessage());
         }
         if (!out.isEmpty()) return limit(out);
 
@@ -62,7 +62,7 @@ public final class DoubanRecommendService {
         try {
             out.addAll(loadHtml(subjectId, q));
         } catch (Throwable e) {
-            com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "html fail: " + e.getMessage());
+            com.fongmi.android.tv.utils.ModDebugcom.fongmi.android.tv.utils.ModDebugLog.w(TAG, "html fail: " + e.getMessage());
         }
         return limit(out);
     }
@@ -140,7 +140,7 @@ public final class DoubanRecommendService {
                     return out;
                 }
             } catch (Throwable e) {
-                com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "rexxar path fail " + url + " " + e.getMessage());
+                com.fongmi.android.tv.utils.ModDebugcom.fongmi.android.tv.utils.ModDebugLog.w(TAG, "rexxar path fail " + url + " " + e.getMessage());
             }
         }
         return out;

@@ -82,7 +82,7 @@ public final class SubtitleFontManager {
         if (ID_SYSTEM.equals(id)) {
             Typeface tf = Typeface.SANS_SERIF;
             TYPEFACE_CACHE.put(id, tf);
-            /* Log.i silenced */
+            /* log silenced */
             return tf;
         }
         Typeface tf = loadTypeface(id);
@@ -112,7 +112,7 @@ public final class SubtitleFontManager {
                 ensureFontFile(id);
                 getTypeface(indexOfId(id));
             } catch (Throwable e) {
-                com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "prepare " + id + ": " + e.getMessage());
+                com.fongmi.android.tv.utils.ModDebugcom.fongmi.android.tv.utils.ModDebugLog.w(TAG, "prepare " + id + ": " + e.getMessage());
             }
         }
     }
@@ -146,7 +146,7 @@ public final class SubtitleFontManager {
                 }
             }
         } catch (Throwable e) {
-            com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "registerAssFontAliases: " + e.getMessage());
+            com.fongmi.android.tv.utils.ModDebugcom.fongmi.android.tv.utils.ModDebugLog.w(TAG, "registerAssFontAliases: " + e.getMessage());
         }
     }
 
@@ -159,7 +159,7 @@ public final class SubtitleFontManager {
                 try {
                     Typeface tf = Typeface.createFromAsset(ctx.getAssets(), assetPath);
                     if (tf != null) {
-                        /* Log.i silenced */
+                        /* log silenced */
                         return tf;
                     }
                 } catch (Throwable ignored) {
@@ -169,12 +169,12 @@ public final class SubtitleFontManager {
             if (f != null && f.isFile()) {
                 Typeface tf = Typeface.createFromFile(f);
                 if (tf != null) {
-                    /* Log.i silenced */
+                    /* log silenced */
                     return tf;
                 }
             }
         } catch (Throwable e) {
-            com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "loadTypeface " + id + ": " + e.getMessage());
+            com.fongmi.android.tv.utils.ModDebugcom.fongmi.android.tv.utils.ModDebugLog.w(TAG, "loadTypeface " + id + ": " + e.getMessage());
         }
         return null;
     }
@@ -214,14 +214,14 @@ public final class SubtitleFontManager {
                         while ((n = in.read(buf)) > 0) fos.write(buf, 0, n);
                     }
                     if (out.isFile() && out.length() > 1000) {
-                        /* Log.i silenced */
+                        /* log silenced */
                         return out;
                     }
                 } catch (Throwable ignored) {
                 }
             }
         } catch (Throwable e) {
-            com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "ensureFontFile " + id + ": " + e.getMessage());
+            com.fongmi.android.tv.utils.ModDebugcom.fongmi.android.tv.utils.ModDebugLog.w(TAG, "ensureFontFile " + id + ": " + e.getMessage());
         }
         return null;
     }

@@ -72,7 +72,7 @@ public final class AiRecommendService {
         AiConfig config = Setting.getAiConfig();
         if (!config.isRecommendationEnabled()) throw new IllegalStateException("ai_recommend_off");
         String prompt = buildPrompt(current, currentTitle);
-        /* Log.i silenced */
+        /* log silenced */
         String content = AiCompletionClient.complete(config, prompt);
         String exclude = currentTitle;
         if (TextUtils.isEmpty(exclude) && current != null) exclude = current.getName();
@@ -154,7 +154,7 @@ public final class AiRecommendService {
                 arr = el.getAsJsonArray();
             }
             if (arr == null) {
-                com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "no items array, body=" + excerpt(content));
+                com.fongmi.android.tv.utils.ModDebugcom.fongmi.android.tv.utils.ModDebugLog.w(TAG, "no items array, body=" + excerpt(content));
                 return items;
             }
             Map<String, Item> dedupe = new LinkedHashMap<>();
@@ -173,9 +173,9 @@ public final class AiRecommendService {
                 if (!dedupe.containsKey(key)) dedupe.put(key, new Item(title, year, type, reason));
             }
             items.addAll(dedupe.values());
-            /* Log.i silenced */
+            /* log silenced */
         } catch (Exception e) {
-            com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "parse fail: " + e.getMessage() + " body=" + excerpt(content));
+            com.fongmi.android.tv.utils.ModDebugcom.fongmi.android.tv.utils.ModDebugLog.w(TAG, "parse fail: " + e.getMessage() + " body=" + excerpt(content));
         }
         return items;
     }

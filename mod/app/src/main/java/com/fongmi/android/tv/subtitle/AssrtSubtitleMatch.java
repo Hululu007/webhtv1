@@ -1972,7 +1972,7 @@ public final class AssrtSubtitleMatch {
                 }
             }
         } catch (Throwable e) {
-            com.fongmi.android.tv.utils.ModDebugLogcom.fongmi.android.tv.utils.ModDebugLog.w("SubtitleMatch", "resolveMedia3Player scan: " + e.getMessage());
+            com.fongmi.android.tv.utils.ModDebugLog.w("SubtitleMatch", "resolveMedia3Player scan: " + e.getMessage());
         }
         return null;
     }

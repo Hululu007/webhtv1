@@ -28,11 +28,11 @@ public final class AiTitleExtractService {
             String content = AiCompletionClient.complete(config, PROMPT + rawTitle.trim());
             String title = parseTitle(content);
             if (!TextUtils.isEmpty(title)) {
-                /* Log.i silenced */
+                /* log silenced */
                 return title;
             }
         } catch (Exception e) {
-            com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "extract fail: " + e.getMessage());
+            com.fongmi.android.tv.utils.ModDebugcom.fongmi.android.tv.utils.ModDebugLog.w(TAG, "extract fail: " + e.getMessage());
         }
         return rawTitle.trim();
     }

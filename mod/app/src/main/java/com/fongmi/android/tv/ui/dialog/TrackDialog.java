@@ -207,7 +207,7 @@ public final class TrackDialog extends BaseBottomSheetDialog implements TrackAda
             for (int j = 0; j < trackGroup.length; j++) {
                 Format format = trackGroup.getTrackFormat(j);
                 String name = provider.getTrackName(format);
-                /* Log.d silenced */
+                /* log silenced */
                 // 字幕轨：隐藏未重命名的 hash 文件名；显示名去掉重复扩展
                 if (type == C.TRACK_TYPE_TEXT) {
                     try {

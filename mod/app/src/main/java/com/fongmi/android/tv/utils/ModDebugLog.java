@@ -12,35 +12,24 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
 
-/**
- * 魔改日志：例行 Info 默认关闭；失败 {@link #w} 始终写入
- * {@code context.getCacheDir()/mod_debug/mod.log}，清缓存即删。不写 logcat。
- */
+/** 例行 Info 默认关闭；失败 w() 写入 cache/mod_debug/mod.log，不写 logcat。 */
 public final class ModDebugLog {
-
     private static final String PREF = "mod_debug_log";
     private static final long MAX_BYTES = 2L * 1024 * 1024;
     private static volatile Boolean enabled;
     private static volatile File logFile;
 
-    private ModDebugLog() {
-    }
+    private ModDebugLog() {}
 
     public static void setEnabled(boolean on) {
         enabled = on;
-        try {
-            Prefers.put(PREF, on);
-        } catch (Throwable ignored) {
-        }
+        try { Prefers.put(PREF, on); } catch (Throwable ignored) {}
     }
 
     public static boolean isEnabled() {
         if (enabled != null) return enabled;
-        try {
-            enabled = Prefers.getBoolean(PREF);
-        } catch (Throwable t) {
-            enabled = false;
-        }
+        try { enabled = Prefers.getBoolean(PREF); }
+        catch (Throwable t) { enabled = false; }
         return Boolean.TRUE.equals(enabled);
     }
 
@@ -48,25 +37,23 @@ public final class ModDebugLog {
         if (context == null) return;
         try {
             File dir = new File(context.getCacheDir(), "mod_debug");
-            // noinspection ResultOfMethodCallIgnored
             dir.mkdirs();
             logFile = new File(dir, "mod.log");
-        } catch (Throwable ignored) {
-        }
+        } catch (Throwable ignored) {}
     }
 
     public static void i(String tag, String msg) {
         if (!isEnabled()) return;
-        writeForce("I", tag, msg);
+        write(tag, msg, "I");
     }
 
     public static void w(String tag, String msg) {
-        writeForce("W", tag, msg);
+        write(tag, msg, "W");
     }
 
-    private static void writeForce(String level, String tag, String msg) {
+    private static void write(String tag, String msg, String level) {
         String line = new SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US).format(new Date())
-                + " " + level + "/" + (tag == null ? "ModDebug" : tag) + ": "
+                + " " + level + "/" + (tag == null ? "Mod" : tag) + ": "
                 + (msg == null ? "" : msg) + "\n";
         try {
             File f = logFile;
@@ -75,18 +62,13 @@ public final class ModDebugLog {
                     Context ctx = App.get();
                     if (ctx != null) init(ctx);
                     f = logFile;
-                } catch (Throwable ignored) {
-                }
+                } catch (Throwable ignored) {}
             }
             if (f == null) return;
-            if (f.length() > MAX_BYTES) {
-                // noinspection ResultOfMethodCallIgnored
-                f.delete();
-            }
+            if (f.length() > MAX_BYTES) f.delete();
             try (FileOutputStream out = new FileOutputStream(f, true)) {
                 out.write(line.getBytes(StandardCharsets.UTF_8));
             }
-        } catch (Throwable ignored) {
-        }
+        } catch (Throwable ignored) {}
     }
 }
