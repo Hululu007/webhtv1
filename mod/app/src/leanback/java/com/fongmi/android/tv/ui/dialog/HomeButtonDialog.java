@@ -76,6 +76,13 @@ public class HomeButtonDialog extends BaseAlertDialog {
     public void onStart() {
         super.onStart();
         setWidth(0.55f);
+        try {
+            android.app.Dialog d = getDialog();
+            if (d != null && d.getWindow() != null) {
+                d.getWindow().setBackgroundDrawableResource(R.drawable.shape_home_button_dialog_bg);
+            }
+        } catch (Throwable ignored) {
+        }
         binding.recycler.post(() -> {
             RecyclerView.ViewHolder holder = binding.recycler.findViewHolderForAdapterPosition(0);
             if (holder instanceof ButtonAdapter.ViewHolder) {
