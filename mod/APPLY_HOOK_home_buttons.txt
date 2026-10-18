@@ -1,0 +1,6 @@
+在 mod/apply.sh 的 inject 段（建议在 inject_home_row_order 之后）增加：
+
+if [[ -f "$MOD/hooks/inject_home_buttons_order.py" ]]; then
+  echo "[mod] inject_home_buttons_order"
+  python3 "$MOD/hooks/inject_home_buttons_order.py" "$ROOT" || exit 1
+fi

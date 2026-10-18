@@ -16,8 +16,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** TV 首页功能区：显隐与顺序持久化。id 0点播 1直播 2搜索 3收藏 4推送 6历史 7设置 */
+/** TV 首页功能区。id 7=设置 始终启用。 */
 public class HomeButton implements Diffable<HomeButton> {
+
+    public static final int ID_SETTING = 7;
 
     private static final String KEY_BUTTON = "home_button";
     private static final String KEY_SORTED = "home_button_sorted";
@@ -36,12 +38,13 @@ public class HomeButton implements Diffable<HomeButton> {
         buttons.add(new HomeButton(3, R.string.home_keep));
         buttons.add(new HomeButton(4, R.string.home_push));
         buttons.add(new HomeButton(6, R.string.home_history_button));
-        buttons.add(new HomeButton(7, R.string.home_setting));
+        buttons.add(new HomeButton(ID_SETTING, R.string.home_setting));
         return buttons;
     }
 
     public static List<HomeButton> getButtons() {
-        return parse(Prefers.getString(KEY_BUTTON, getDefaultButtons()));
+        List<HomeButton> items = parse(Prefers.getString(KEY_BUTTON, getDefaultButtons()));
+        return ensureSetting(items);
     }
 
     public static List<HomeButton> getVisibleButtons() {
@@ -72,6 +75,14 @@ public class HomeButton implements Diffable<HomeButton> {
     }
 
     public static void save(Map<Integer, HomeButton> map) {
+        if (!map.containsKey(ID_SETTING)) {
+            for (HomeButton b : all()) {
+                if (b.getId() == ID_SETTING) {
+                    map.put(ID_SETTING, b);
+                    break;
+                }
+            }
+        }
         save(KEY_BUTTON, map);
     }
 
@@ -83,6 +94,21 @@ public class HomeButton implements Diffable<HomeButton> {
         Prefers.remove(KEY_BUTTON);
         Prefers.remove(KEY_SORTED);
         buttons = null;
+    }
+
+    public static boolean isSetting(HomeButton button) {
+        return button != null && button.getId() == ID_SETTING;
+    }
+
+    private static List<HomeButton> ensureSetting(List<HomeButton> items) {
+        for (HomeButton b : items) if (b.getId() == ID_SETTING) return items;
+        for (HomeButton b : all()) {
+            if (b.getId() == ID_SETTING) {
+                items.add(b);
+                break;
+            }
+        }
+        return items;
     }
 
     private static void save(String key, Map<Integer, HomeButton> map) {
@@ -99,7 +125,7 @@ public class HomeButton implements Diffable<HomeButton> {
         ids.add("2");
         ids.add("3");
         ids.add("4");
-        ids.add("7");
+        ids.add(String.valueOf(ID_SETTING));
         return TextUtils.join(",", ids);
     }
 
@@ -122,17 +148,9 @@ public class HomeButton implements Diffable<HomeButton> {
         this.resId = resId;
     }
 
-    public int getId() {
-        return id;
-    }
-
-    public int getResId() {
-        return resId;
-    }
-
-    public String getName() {
-        return ResUtil.getString(resId);
-    }
+    public int getId() { return id; }
+    public int getResId() { return resId; }
+    public String getName() { return ResUtil.getString(resId); }
 
     @Override
     public boolean equals(@Nullable Object obj) {
@@ -142,12 +160,8 @@ public class HomeButton implements Diffable<HomeButton> {
     }
 
     @Override
-    public boolean isSameItem(HomeButton other) {
-        return equals(other);
-    }
+    public boolean isSameItem(HomeButton other) { return equals(other); }
 
     @Override
-    public boolean isSameContent(HomeButton other) {
-        return equals(other);
-    }
+    public boolean isSameContent(HomeButton other) { return equals(other); }
 }

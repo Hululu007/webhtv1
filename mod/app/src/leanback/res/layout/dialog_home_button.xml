@@ -29,7 +29,7 @@
             android:gravity="end"
             android:textColor="@color/white_60"
             android:textSize="16sp"
-            tools:text="5/8 enabled" />
+            tools:text="5/7 enabled" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/reset"
@@ -37,11 +37,12 @@
             android:layout_width="wrap_content"
             android:layout_height="40dp"
             android:layout_marginStart="16dp"
+            android:focusable="true"
             android:minHeight="40dp"
             android:minWidth="72dp"
             android:text="@string/home_buttons_reset"
-            android:textColor="@color/dialog_tonal_button_text"
-            app:backgroundTint="@color/dialog_tonal_button_bg" />
+            android:textColor="@color/home_button_reset_text"
+            app:backgroundTint="@color/home_button_reset_bg" />
 
     </androidx.appcompat.widget.LinearLayoutCompat>
 

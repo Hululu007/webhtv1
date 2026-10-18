@@ -60,6 +60,7 @@ public class HomeButtonDialog extends BaseAlertDialog {
             adapter.reload();
             updateSummary();
             notifyChanged();
+            binding.reset.post(binding.reset::requestFocus);
         });
     }
 
@@ -78,8 +79,7 @@ public class HomeButtonDialog extends BaseAlertDialog {
         binding.recycler.post(() -> {
             RecyclerView.ViewHolder holder = binding.recycler.findViewHolderForAdapterPosition(0);
             if (holder instanceof ButtonAdapter.ViewHolder) {
-                ButtonAdapter.ViewHolder viewHolder = (ButtonAdapter.ViewHolder) holder;
-                viewHolder.focusSelect();
+                ((ButtonAdapter.ViewHolder) holder).focusSelect();
             } else {
                 binding.recycler.requestFocus();
             }
@@ -111,39 +111,43 @@ public class HomeButtonDialog extends BaseAlertDialog {
             return items.size();
         }
 
-        private void toggle(HomeButton item) {
+        private void toggle(HomeButton item, int position) {
+            if (HomeButton.isSetting(item)) return;
             Map<Integer, HomeButton> selected = HomeButton.getButtonsMap();
             if (selected.containsKey(item.getId())) selected.remove(item.getId());
             else selected.put(item.getId(), item);
-            saveSelectedInSortedOrder(selected);
-            notifyDataSetChanged();
+            HomeButton.save(HomeButton.getMap(selectedInSortedOrder(selected)));
+            notifyItemChanged(position);
             updateSummary();
             notifyChanged();
+            binding.recycler.post(() -> {
+                RecyclerView.ViewHolder holder = binding.recycler.findViewHolderForAdapterPosition(position);
+                if (holder instanceof ViewHolder) ((ViewHolder) holder).focusSelect();
+            });
+        }
+
+        private List<HomeButton> selectedInSortedOrder(Map<Integer, HomeButton> selected) {
+            List<HomeButton> sorted = new ArrayList<>();
+            for (HomeButton item : items) if (selected.containsKey(item.getId())) sorted.add(item);
+            return sorted;
         }
 
         private void move(int from, int to) {
             if (from < 0 || to < 0 || from >= items.size() || to >= items.size()) return;
             Collections.swap(items, from, to);
             HomeButton.saveSorted(HomeButton.getMap(items));
-            saveSelectedInSortedOrder(HomeButton.getButtonsMap());
+            HomeButton.save(HomeButton.getMap(selectedInSortedOrder(HomeButton.getButtonsMap())));
             notifyItemMoved(from, to);
-            notifyItemRangeChanged(Math.min(from, to), Math.abs(from - to) + 1);
-            binding.recycler.post(() -> focus(to, from > to));
+            notifyItemChanged(from);
+            notifyItemChanged(to);
+            binding.recycler.post(() -> {
+                RecyclerView.ViewHolder holder = binding.recycler.findViewHolderForAdapterPosition(to);
+                if (!(holder instanceof ViewHolder)) return;
+                ViewHolder vh = (ViewHolder) holder;
+                if (from > to) vh.binding.up.requestFocus();
+                else vh.binding.down.requestFocus();
+            });
             notifyChanged();
-        }
-
-        private void saveSelectedInSortedOrder(Map<Integer, HomeButton> selected) {
-            List<HomeButton> sorted = new ArrayList<>();
-            for (HomeButton item : items) if (selected.containsKey(item.getId())) sorted.add(item);
-            HomeButton.save(HomeButton.getMap(sorted));
-        }
-
-        private void focus(int position, boolean up) {
-            RecyclerView.ViewHolder holder = binding.recycler.findViewHolderForAdapterPosition(position);
-            if (!(holder instanceof ViewHolder)) return;
-            ViewHolder viewHolder = (ViewHolder) holder;
-            if (up) viewHolder.binding.up.requestFocus();
-            else viewHolder.binding.down.requestFocus();
         }
 
         private class ViewHolder extends RecyclerView.ViewHolder {
@@ -154,7 +158,10 @@ public class HomeButtonDialog extends BaseAlertDialog {
             ViewHolder(@NonNull AdapterHomeButtonBinding binding) {
                 super(binding.getRoot());
                 this.binding = binding;
-                binding.select.setOnClickListener(view -> toggle(item));
+                binding.select.setOnClickListener(view -> {
+                    int pos = getBindingAdapterPosition();
+                    if (pos != RecyclerView.NO_POSITION && item != null) toggle(item, pos);
+                });
                 binding.up.setOnClickListener(view -> move(getBindingAdapterPosition(), getBindingAdapterPosition() - 1));
                 binding.down.setOnClickListener(view -> move(getBindingAdapterPosition(), getBindingAdapterPosition() + 1));
             }
@@ -162,9 +169,10 @@ public class HomeButtonDialog extends BaseAlertDialog {
             void bind(HomeButton item) {
                 this.item = item;
                 boolean selected = HomeButton.getButtonsMap().containsKey(item.getId());
+                boolean locked = HomeButton.isSetting(item);
                 binding.text.setText(item.getName());
-                binding.check.setChecked(selected);
-                binding.select.setAlpha(selected ? 1.0f : 0.6f);
+                binding.checkMark.setText(selected ? "✓" : "");
+                binding.select.setAlpha(locked ? 1f : (selected ? 1f : 0.65f));
                 binding.up.setEnabled(getBindingAdapterPosition() > 0);
                 binding.down.setEnabled(getBindingAdapterPosition() < items.size() - 1);
                 binding.up.setVisibility(getBindingAdapterPosition() > 0 ? View.VISIBLE : View.INVISIBLE);
