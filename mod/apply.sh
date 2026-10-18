@@ -150,6 +150,10 @@ run_hook "$MOD/hooks/inject_track_selector_context.py"
 run_hook "$MOD/hooks/inject_pan_prefer.py"
 run_hook "$MOD/hooks/inject_hide_type_more.py"
 run_hook "$MOD/hooks/inject_home_row_order.py"
+  if [[ -f "$MOD/hooks/inject_home_buttons_order.py" ]]; then
+  echo "[mod] inject_home_buttons_order"
+  python3 "$MOD/hooks/inject_home_buttons_order.py" "$ROOT" || exit 1
+fi
 run_hook "$MOD/hooks/fix_update_setting_stubs.py"
 run_hook "$MOD/hooks/inject_result_msg_ui.py"
 
