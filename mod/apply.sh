@@ -154,6 +154,11 @@ run_hook "$MOD/hooks/inject_home_row_order.py"
   echo "[mod] inject_home_buttons_order"
   python3 "$MOD/hooks/inject_home_buttons_order.py" "$ROOT" || exit 1
 fi
+if [[ -f "$MOD/hooks/inject_ui_polish.py" ]]; then
+  echo "[mod] inject_ui_polish"
+  python3 "$MOD/hooks/inject_ui_polish.py" "$ROOT" || exit 1
+fi
+
 run_hook "$MOD/hooks/fix_update_setting_stubs.py"
 run_hook "$MOD/hooks/inject_result_msg_ui.py"
 
