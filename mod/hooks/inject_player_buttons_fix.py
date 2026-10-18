@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Movie: hide OP/ED. Live: honor PlayerButtonSetting hide for scale & play_params."""
+"""Movie hide OP/ED; Live honor hide for scale & play_params — TV + mobile."""
 from __future__ import annotations
 
 import re
@@ -8,39 +8,66 @@ from pathlib import Path
 
 ROOT = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
 
+VIDEO_PATHS = [
+    ROOT / "app/src/leanback/java/com/fongmi/android/tv/ui/activity/VideoActivity.java",
+    ROOT / "app/src/mobile/java/com/fongmi/android/tv/ui/activity/VideoActivity.java",
+]
+LIVE_PATHS = [
+    ROOT / "app/src/leanback/java/com/fongmi/android/tv/ui/activity/LiveActivity.java",
+    ROOT / "app/src/mobile/java/com/fongmi/android/tv/ui/activity/LiveActivity.java",
+]
 
-def patch_video() -> None:
-    path = ROOT / "app/src/leanback/java/com/fongmi/android/tv/ui/activity/VideoActivity.java"
+
+def patch_video(path: Path) -> None:
     if not path.is_file():
-        print("[mod] WARN VideoActivity missing")
+        print("[mod] WARN missing", path.relative_to(ROOT))
         return
     t = path.read_text(encoding="utf-8")
     if "OPENING_MOVIE_HIDE" in t:
-        print("[mod] VideoActivity OP/ED movie hide already")
+        print("[mod] OP/ED already", path.relative_to(ROOT))
         return
 
-    # After EPISODES setVisibleIfAllowed in setEpisodeAdapter
-    needle = (
-        "PlayerButtonSetting.setVisibleIfAllowed(PlayerButtonSetting.EPISODES, "
-        "mBinding.control.action.episodes, items.size() >= 2);"
+    for needle, size_expr in [
+        (
+            "PlayerButtonSetting.setVisibleIfAllowed(PlayerButtonSetting.EPISODES, mBinding.control.action.episodes, items.size() >= 2);",
+            "items.size()",
+        ),
+        (
+            "PlayerButtonSetting.setVisibleIfAllowed(PlayerButtonSetting.EPISODES, mBinding.control.action.episodes, size >= 2);",
+            "size",
+        ),
+    ]:
+        if needle in t:
+            insert = (
+                needle
+                + "\n        // OPENING_MOVIE_HIDE: 电影(集数<2)隐藏片头片尾，连续剧保留\n"
+                + "        try {\n"
+                + f"            PlayerButtonSetting.setVisibleIfAllowed(PlayerButtonSetting.OPENING, mBinding.control.action.opening, {size_expr} >= 2);\n"
+                + f"            PlayerButtonSetting.setVisibleIfAllowed(PlayerButtonSetting.ENDING, mBinding.control.action.ending, {size_expr} >= 2);\n"
+                + "        } catch (Throwable ignored) {}\n"
+            )
+            path.write_text(t.replace(needle, insert, 1), encoding="utf-8")
+            print("[mod] OP/ED movie hide", path.relative_to(ROOT))
+            return
+
+    m = re.search(
+        r"mBinding\.control\.action\.episodes\.setVisibility\((items\.size\(\)|size) < 2 \? View\.GONE : View\.VISIBLE\);",
+        t,
     )
-    insert = (
-        needle
-        + "\n        // OPENING_MOVIE_HIDE: 电影(集数<2)隐藏片头片尾，连续剧保留\n"
-        + "        try {\n"
-        + "            PlayerButtonSetting.setVisibleIfAllowed(PlayerButtonSetting.OPENING, "
-        "mBinding.control.action.opening, items.size() >= 2);\n"
-        + "            PlayerButtonSetting.setVisibleIfAllowed(PlayerButtonSetting.ENDING, "
-        "mBinding.control.action.ending, items.size() >= 2);\n"
-        + "        } catch (Throwable ignored) {}\n"
-    )
-    if needle in t:
-        t = t.replace(needle, insert, 1)
-        path.write_text(t, encoding="utf-8")
-        print("[mod] VideoActivity movie OP/ED hide")
+    if m:
+        size_expr = m.group(1)
+        insert = (
+            m.group(0)
+            + "\n        // OPENING_MOVIE_HIDE\n"
+            + "        try {\n"
+            + f"            PlayerButtonSetting.setVisibleIfAllowed(PlayerButtonSetting.OPENING, mBinding.control.action.opening, {size_expr} >= 2);\n"
+            + f"            PlayerButtonSetting.setVisibleIfAllowed(PlayerButtonSetting.ENDING, mBinding.control.action.ending, {size_expr} >= 2);\n"
+            + "        } catch (Throwable ignored) {}\n"
+        )
+        path.write_text(t[: m.start()] + insert + t[m.end() :], encoding="utf-8")
+        print("[mod] OP/ED movie hide (episodes vis)", path.relative_to(ROOT))
         return
 
-    # Fallback: inject into applyActionButtonVisibility / forceHideConfiguredActionButtons
     alt = "private void forceHideConfiguredActionButtons() {"
     if alt in t:
         block = (
@@ -58,23 +85,43 @@ def patch_video() -> None:
             "mBinding.control.action.ending, ep >= 2);\n"
             + "        } catch (Throwable ignored) {}\n"
         )
-        t = t.replace(alt, block, 1)
-        path.write_text(t, encoding="utf-8")
-        print("[mod] VideoActivity OP/ED via forceHideConfigured")
+        path.write_text(t.replace(alt, block, 1), encoding="utf-8")
+        print("[mod] OP/ED via forceHide", path.relative_to(ROOT))
         return
 
-    print("[mod] ERROR cannot patch VideoActivity OP/ED")
+    # applyActionButtonVisibility fallback
+    alt2 = "private void applyActionButtonVisibility() {"
+    if alt2 in t:
+        block = (
+            alt2
+            + "\n        try {\n"
+            + "            int ep = 0;\n"
+            + "            try {\n"
+            + "                if (getFlag() != null && getFlag().getEpisodes() != null) "
+            "ep = getFlag().getEpisodes().size();\n"
+            + "            } catch (Throwable ignored) {}\n"
+            + "            // OPENING_MOVIE_HIDE\n"
+            + "            PlayerButtonSetting.setVisibleIfAllowed(PlayerButtonSetting.OPENING, "
+            "mBinding.control.action.opening, ep >= 2);\n"
+            + "            PlayerButtonSetting.setVisibleIfAllowed(PlayerButtonSetting.ENDING, "
+            "mBinding.control.action.ending, ep >= 2);\n"
+            + "        } catch (Throwable ignored) {}\n"
+        )
+        path.write_text(t.replace(alt2, block, 1), encoding="utf-8")
+        print("[mod] OP/ED via applyActionButtonVisibility", path.relative_to(ROOT))
+        return
+
+    print("[mod] ERROR cannot patch OP/ED", path.relative_to(ROOT))
     sys.exit(1)
 
 
-def patch_live() -> None:
-    path = ROOT / "app/src/leanback/java/com/fongmi/android/tv/ui/activity/LiveActivity.java"
+def patch_live(path: Path) -> None:
     if not path.is_file():
-        print("[mod] WARN LiveActivity missing")
+        print("[mod] WARN missing", path.relative_to(ROOT))
         return
     t = path.read_text(encoding="utf-8")
     if "applyLiveButtonVisibility" in t:
-        print("[mod] LiveActivity button visibility already")
+        print("[mod] live visibility already", path.relative_to(ROOT))
         return
 
     helper = """
@@ -88,15 +135,15 @@ def patch_live() -> None:
         }
     }
 """
-    # import if needed
     if "import com.fongmi.android.tv.setting.PlayerButtonSetting;" not in t:
-        t = t.replace(
-            "import com.fongmi.android.tv.setting.PlayerSetting;",
-            "import com.fongmi.android.tv.setting.PlayerButtonSetting;\n"
-            "import com.fongmi.android.tv.setting.PlayerSetting;",
-            1,
-        )
-        if "import com.fongmi.android.tv.setting.PlayerButtonSetting;" not in t:
+        if "import com.fongmi.android.tv.setting.PlayerSetting;" in t:
+            t = t.replace(
+                "import com.fongmi.android.tv.setting.PlayerSetting;",
+                "import com.fongmi.android.tv.setting.PlayerButtonSetting;\n"
+                "import com.fongmi.android.tv.setting.PlayerSetting;",
+                1,
+            )
+        else:
             t = t.replace(
                 "package com.fongmi.android.tv.ui.activity;",
                 "package com.fongmi.android.tv.ui.activity;\n\n"
@@ -107,31 +154,31 @@ def patch_live() -> None:
     last = t.rfind("\n}")
     t = t[:last] + helper + t[last:]
 
-    # call from showControl
-    if "private void showControl" in t:
+    t2, n = re.subn(
+        r"(private void showControl\([^\)]*\) \{\n)",
+        r"\1        applyLiveButtonVisibility();\n",
+        t,
+        count=1,
+    )
+    if n:
+        t = t2
+    else:
         t2, n = re.subn(
-            r"(private void showControl\([^\)]*\) \{\n)",
+            r"(void showControl\([^\)]*\) \{\n)",
             r"\1        applyLiveButtonVisibility();\n",
             t,
             count=1,
         )
         if n:
             t = t2
-        else:
-            t = re.sub(
-                r"(void showControl\([^\)]*\) \{\n)",
-                r"\1        applyLiveButtonVisibility();\n",
-                t,
-                count=1,
-            )
-    # call after setScale initial in initView-ish: after setScale(LiveSetting.getScale())
+
     if "setScale(LiveSetting.getScale());" in t:
         t = t.replace(
             "setScale(LiveSetting.getScale());",
             "setScale(LiveSetting.getScale());\n        applyLiveButtonVisibility();",
             1,
         )
-    elif "super.onResume();" in t:
+    elif "super.onResume();" in t and "applyLiveButtonVisibility();" not in t:
         t = t.replace(
             "super.onResume();",
             "super.onResume();\n        applyLiveButtonVisibility();",
@@ -139,13 +186,15 @@ def patch_live() -> None:
         )
 
     path.write_text(t, encoding="utf-8")
-    print("[mod] LiveActivity applyLiveButtonVisibility")
+    print("[mod] live visibility", path.relative_to(ROOT))
 
 
 def main() -> None:
     print("[mod] inject_player_buttons_fix ROOT", ROOT)
-    patch_video()
-    patch_live()
+    for p in VIDEO_PATHS:
+        patch_video(p)
+    for p in LIVE_PATHS:
+        patch_live(p)
     print("[mod] inject_player_buttons_fix done")
 
 
