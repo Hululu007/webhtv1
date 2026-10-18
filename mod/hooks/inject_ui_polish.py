@@ -200,20 +200,6 @@ def patch_live_osd_z() -> None:
     live = ROOT / "app/src/leanback/res/layout/activity_live.xml"
     if live.is_file():
         t = live.read_text(encoding="utf-8")
-        if 'android:id="@+id/exo"' in t and "surface_type" not in t:
-            t = t.replace(
-                'android:id="@+id/exo"',
-                'android:id="@+id/exo"\n                app:surface_type="texture_view"',
-                1,
-            )
-            if "xmlns:app=" not in t:
-                t = t.replace(
-                    'xmlns:android="http://schemas.android.com/apk/res/android"',
-                    'xmlns:android="http://schemas.android.com/apk/res/android"\n    xmlns:app="http://schemas.android.com/apk/res-auto"',
-                    1,
-                )
-            live.write_text(t, encoding="utf-8")
-            print("[mod] live PlayerView texture_view")
         t = live.read_text(encoding="utf-8")
         if 'android:id="@+id/osd"' in t and "elevation" not in t.split('android:id="@+id/osd"')[1][:220]:
             t = t.replace(
