@@ -26,7 +26,7 @@
     <string name="setting_live_default_fullscreen">Live default fullscreen</string>
     <string name="setting_webview_live">WebView live</string>
     <string name="setting_eac3_soft_decode">E-AC3 soft decode</string>
-    <string name="setting_search_pan_first">Search: cloud drive first</string>
+    <string name="setting_search_pan_first">Search result prefer</string>
     <string name="setting_play_direct_pan_prefer">Direct play: prefer cloud drive</string>
     <string name="setting_hide_home_type_more">Hide home more button</string>
 </resources>

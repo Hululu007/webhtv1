@@ -787,13 +787,49 @@ public class Setting {
         Prefers.put("eac3_soft_decode", value);
     }
 
-    /** 搜索结果：网盘站点/条目排到前面（默认关） */
+    /** 搜索结果排序优先：0速度 1网盘 2音乐 3短剧 */
+    public static final int SEARCH_PREFER_SPEED = 0;
+    public static final int SEARCH_PREFER_PAN = 1;
+    public static final int SEARCH_PREFER_MUSIC = 2;
+    public static final int SEARCH_PREFER_SHORT = 3;
+
+    public static int getSearchResultPrefer() {
+        int v = Prefers.getInt("search_result_prefer", -1);
+        if (v >= 0 && v <= 3) return v;
+        // 兼容旧开关：搜索结果网盘在前
+        return Prefers.getBoolean("search_pan_first", false) ? SEARCH_PREFER_PAN : SEARCH_PREFER_SPEED;
+    }
+
+    public static void putSearchResultPrefer(int value) {
+        if (value < 0 || value > 3) value = SEARCH_PREFER_SPEED;
+        Prefers.put("search_result_prefer", value);
+    }
+
+    /** 非速度模式时为 true（排序注入用） */
+    public static boolean isSearchPreferActive() {
+        return getSearchResultPrefer() != SEARCH_PREFER_SPEED;
+    }
+
+    /** 兼容旧名：仅当选中「网盘」时为 true */
     public static boolean isSearchPanFirst() {
-        return Prefers.getBoolean("search_pan_first", false);
+        return getSearchResultPrefer() == SEARCH_PREFER_PAN;
     }
 
     public static void putSearchPanFirst(boolean value) {
-        Prefers.put("search_pan_first", value);
+        putSearchResultPrefer(value ? SEARCH_PREFER_PAN : SEARCH_PREFER_SPEED);
+    }
+
+    public static String getSearchResultPreferText() {
+        switch (getSearchResultPrefer()) {
+            case SEARCH_PREFER_PAN:
+                return "网盘";
+            case SEARCH_PREFER_MUSIC:
+                return "音乐";
+            case SEARCH_PREFER_SHORT:
+                return "短剧";
+            default:
+                return "速度";
+        }
     }
 
     /** 直达播放：优先选网盘结果（默认关） */

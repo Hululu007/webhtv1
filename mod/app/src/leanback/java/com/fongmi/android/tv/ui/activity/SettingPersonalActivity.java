@@ -121,7 +121,7 @@ public class SettingPersonalActivity extends BaseActivity {
         try { mBinding.homeEnterLiveText.setText(getSwitch(Setting.isHomeEnterLive())); } catch (Throwable ignored) {}
         try { mBinding.liveDefaultFullscreenText.setText(getSwitch(Setting.isLiveDefaultFullscreen())); } catch (Throwable ignored) {}
         try { mBinding.eac3SoftDecodeText.setText(getSwitch(Setting.isEac3SoftDecode())); } catch (Throwable ignored) {}
-        try { mBinding.searchPanFirstText.setText(getSwitch(Setting.isSearchPanFirst())); } catch (Throwable ignored) {}
+        try { mBinding.searchPanFirstText.setText(Setting.getSearchResultPreferText()); } catch (Throwable ignored) {}
         try { mBinding.playDirectPanPreferText.setText(getSwitch(Setting.isPlayDirectPanPrefer())); } catch (Throwable ignored) {}
         try { mBinding.webviewLiveText.setText(getSwitch(Setting.isWebViewLiveEnabled())); } catch (Throwable ignored) {}
         try { mBinding.recommendSourceText.setText(recommendSourceLabel()); } catch (Throwable ignored) {}
@@ -344,8 +344,9 @@ public class SettingPersonalActivity extends BaseActivity {
 
     private void setSearchPanFirst(View view) {
         try {
-            Setting.putSearchPanFirst(!Setting.isSearchPanFirst());
-            mBinding.searchPanFirstText.setText(getSwitch(Setting.isSearchPanFirst()));
+            int next = (Setting.getSearchResultPrefer() + 1) % 4;
+            Setting.putSearchResultPrefer(next);
+            mBinding.searchPanFirstText.setText(Setting.getSearchResultPreferText());
         } catch (Throwable ignored) {
         }
     }
