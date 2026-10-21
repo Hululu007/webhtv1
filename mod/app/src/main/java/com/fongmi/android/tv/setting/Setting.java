@@ -792,16 +792,17 @@ public class Setting {
     public static final int SEARCH_PREFER_PAN = 1;
     public static final int SEARCH_PREFER_MUSIC = 2;
     public static final int SEARCH_PREFER_SHORT = 3;
+    public static final int SEARCH_PREFER_VOD = 4; // 影视
 
     public static int getSearchResultPrefer() {
         int v = Prefers.getInt("search_result_prefer", -1);
-        if (v >= 0 && v <= 3) return v;
+        if (v >= 0 && v <= 4) return v;
         // 兼容旧开关：搜索结果网盘在前
         return Prefers.getBoolean("search_pan_first", false) ? SEARCH_PREFER_PAN : SEARCH_PREFER_SPEED;
     }
 
     public static void putSearchResultPrefer(int value) {
-        if (value < 0 || value > 3) value = SEARCH_PREFER_SPEED;
+        if (value < 0 || value > 4) value = SEARCH_PREFER_SPEED;
         Prefers.put("search_result_prefer", value);
     }
 
@@ -827,6 +828,8 @@ public class Setting {
                 return "音乐";
             case SEARCH_PREFER_SHORT:
                 return "短剧";
+            case SEARCH_PREFER_VOD:
+                return "影视";
             default:
                 return "速度";
         }

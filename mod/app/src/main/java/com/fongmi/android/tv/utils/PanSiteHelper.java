@@ -30,6 +30,12 @@ public final class PanSiteHelper {
             "shortdrama", "short_drama", "short-drama", "tiktok剧", "抖音剧"
     };
 
+    private static final String[] VOD_KEYS = {
+            "影视", "电影", "电视剧", "剧集", "连续剧", "美剧", "韩剧", "日剧",
+            "港剧", "台剧", "国产剧", "欧美剧", "动漫", "动画", "国漫", "日漫",
+            "综艺", "纪录片", "影院", "片库", "vod", "movie", "cinema", "tvbox"
+    };
+
     private PanSiteHelper() {}
 
     public static boolean isPanSite(Site site) {
@@ -93,12 +99,38 @@ public final class PanSiteHelper {
         return isShortSite(collect.getSite());
     }
 
-    /** Match current search-result prefer mode (网盘/音乐/短剧). Speed mode always false. */
+
+    public static boolean isVodSite(Site site) {
+        if (site == null) return false;
+        if (isPanSite(site) || isMusicSite(site) || isShortSite(site)) return false;
+        return containsAny(site.getName(), VOD_KEYS)
+                || containsAny(site.getKey(), VOD_KEYS)
+                || containsAny(site.getApi(), VOD_KEYS);
+    }
+
+    public static boolean isVodVod(Vod vod) {
+        if (vod == null) return false;
+        if (isPanVod(vod) || isMusicVod(vod) || isShortVod(vod)) return false;
+        if (isVodSite(vod.getSite())) return true;
+        return containsAny(vod.getSiteName(), VOD_KEYS)
+                || containsAny(vod.getSiteKey(), VOD_KEYS)
+                || containsAny(vod.getName(), VOD_KEYS)
+                || containsAny(vod.getTypeName(), VOD_KEYS)
+                || containsAny(vod.getRemarks(), VOD_KEYS);
+    }
+
+    public static boolean isVodCollect(Collect collect) {
+        if (collect == null || collect.getSite() == null) return false;
+        return isVodSite(collect.getSite());
+    }
+
+    /** Match current search-result prefer mode. Speed mode always false. */
     public static boolean matchesSearchPrefer(Vod vod) {
         int mode = Setting.getSearchResultPrefer();
         if (mode == Setting.SEARCH_PREFER_PAN) return isPanVod(vod);
         if (mode == Setting.SEARCH_PREFER_MUSIC) return isMusicVod(vod);
         if (mode == Setting.SEARCH_PREFER_SHORT) return isShortVod(vod);
+        if (mode == Setting.SEARCH_PREFER_VOD) return isVodVod(vod);
         return false;
     }
 
@@ -107,6 +139,7 @@ public final class PanSiteHelper {
         if (mode == Setting.SEARCH_PREFER_PAN) return isPanSite(site);
         if (mode == Setting.SEARCH_PREFER_MUSIC) return isMusicSite(site);
         if (mode == Setting.SEARCH_PREFER_SHORT) return isShortSite(site);
+        if (mode == Setting.SEARCH_PREFER_VOD) return isVodSite(site);
         return false;
     }
 
@@ -115,6 +148,7 @@ public final class PanSiteHelper {
         if (mode == Setting.SEARCH_PREFER_PAN) return isPanCollect(collect);
         if (mode == Setting.SEARCH_PREFER_MUSIC) return isMusicCollect(collect);
         if (mode == Setting.SEARCH_PREFER_SHORT) return isShortCollect(collect);
+        if (mode == Setting.SEARCH_PREFER_VOD) return isVodCollect(collect);
         return false;
     }
 

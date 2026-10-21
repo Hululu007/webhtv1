@@ -321,7 +321,7 @@ public class SettingPersonalActivity extends BaseActivity {
 
     private void setSearchPanFirst(View view) {
         try {
-            int next = (Setting.getSearchResultPrefer() + 1) % 4;
+            int next = (Setting.getSearchResultPrefer() + 1) % 5;
             Setting.putSearchResultPrefer(next);
             mBinding.searchPanFirstText.setText(Setting.getSearchResultPreferText());
         } catch (Throwable ignored) {
