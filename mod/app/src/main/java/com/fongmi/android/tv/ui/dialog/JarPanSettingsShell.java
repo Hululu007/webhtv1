@@ -35,7 +35,7 @@ import java.util.List;
 import java.util.concurrent.Executors;
 
 /**
- * SHELL_JAR_SETTINGS_REDO v10b
+ * SHELL_JAR_SETTINGS_REDO v10
  * 淡蓝背景 + 完整线路列表可滚动 + 下载线程需确认 + 账号登录壳子列表带高亮
  */
 public final class JarPanSettingsShell {
@@ -60,19 +60,21 @@ public final class JarPanSettingsShell {
 
     private JarPanSettingsShell() {}
 
-    /** 仅 TV / Leanback；手机端一律 false，不改 jar 原逻辑 */
+    /**
+     * 与壳子其它魔改一致：优先 Util.isLeanback()（按编译 flavor）。
+     * 再回退 FEATURE_LEANBACK / UI_MODE，避免部分盒子漏判。
+     * 手机端 mobile flavor 下 Util.isLeanback()=false，绝不进壳子 UI。
+     */
     public static boolean isTelevision() {
         try {
+            if (com.fongmi.android.tv.utils.Util.isLeanback()) return true;
+        } catch (Throwable ignored) {
+        }
+        try {
             Context c = null;
-            try {
-                c = com.fongmi.android.tv.App.activity();
-            } catch (Throwable ignored) {
-            }
+            try { c = com.fongmi.android.tv.App.activity(); } catch (Throwable ignored) {}
             if (c == null) {
-                try {
-                    c = com.fongmi.android.tv.App.get();
-                } catch (Throwable ignored) {
-                }
+                try { c = com.fongmi.android.tv.App.get(); } catch (Throwable ignored) {}
             }
             if (c == null) return false;
             if (c.getPackageManager().hasSystemFeature(PackageManager.FEATURE_LEANBACK)) return true;
@@ -87,8 +89,8 @@ public final class JarPanSettingsShell {
         if (!isTelevision()) return false; // 手机端不拦截
         if (TextUtils.isEmpty(id)) return false;
         String s = id.toLowerCase();
-        // 账号登录不拦截：必须走 jar 多级菜单（登录/切换/导入）
-        if (s.contains("login") || s.contains("panlogin") || id.contains(ID_LOGIN)) return false;
+        // 账号登录不拦截：下一级是 jar 内页面，壳子点选只会关窗
+        if (s.contains("login") || s.contains("panlogin") || (id != null && id.contains(ID_LOGIN))) return false;
         return s.contains("playlineorder")
                 || s.contains("panthread")
                 || id.contains(ID_LINE_ORDER)
@@ -97,13 +99,13 @@ public final class JarPanSettingsShell {
 
     public static void open(Activity activity, String siteKey, String id) {
         if (activity == null || activity.isFinishing()) return;
-        if (!isTelevision()) return; // 双保险：手机不进壳子 UI
+        if (!isTelevision()) return;
         if (sOpening) return;
         sOpening = true;
         try {
             openInner(activity, siteKey, id);
-        } finally {
-            // released on dialog dismiss
+        } catch (Throwable e) {
+            sOpening = false;
         }
     }
 
@@ -475,30 +477,6 @@ public final class JarPanSettingsShell {
         return box;
     }
 
-    /** 与手机端截图档位对齐 */
-    private static List<String> threadOptionsFor(ThreadItem item) {
-        List<String> opts = new ArrayList<>();
-        if (item.allowAuto) opts.add("自动");
-        int[] nums;
-        if ("quarkThread".equals(item.key)) {
-            nums = new int[]{1, 2, 4, 8, 12, 16, 24, 32, 48, 64};
-        } else if ("quarkThreadVip".equals(item.key)) {
-            nums = new int[]{1, 2, 4, 8, 12, 16, 24, 32};
-        } else if ("baiduThread".equals(item.key)) {
-            nums = new int[]{1, 2, 4, 6, 8, 10, 12, 16, 24, 32};
-        } else if ("xunleiThread".equals(item.key)) {
-            nums = new int[]{1, 2, 4, 6, 8, 10, 12, 16, 24, 32};
-        } else if ("aliThread".equals(item.key)) {
-            nums = new int[]{1, 2, 4, 8, 12, 16, 24, 32, 48, 64, 96, 128};
-        } else if (item.allowAuto) {
-            nums = new int[]{1, 2, 4, 8, 12, 16, 32, 64, 128};
-        } else {
-            nums = new int[]{1, 2, 4, 6, 8, 10, 12, 16, 24, 32, 48, 64, 128};
-        }
-        for (int n : nums) opts.add(String.valueOf(n));
-        return opts;
-    }
-
     private static void openThreadPicker(Activity activity, ThreadItem item, AlertDialog parent, Runnable onSaved) {
         LinearLayout root = column(activity);
         root.setBackgroundColor(BG_PANEL);
@@ -508,7 +486,12 @@ public final class JarPanSettingsShell {
         String cur = readThreadVal(item.key, item.defVal);
         final String[] selected = {normalizeThread(cur, item.allowAuto)};
 
-        List<String> opts = threadOptionsFor(item);
+        // 与手机端 jar 常见档位对齐（含截图中的 10/12/16/32/64）
+        List<String> opts = new ArrayList<>();
+        if (item.allowAuto) opts.add("自动");
+        for (int n : new int[]{1, 2, 3, 4, 6, 8, 10, 12, 16, 24, 32, 48, 64, 96, 128}) {
+            opts.add(String.valueOf(n));
+        }
 
         ScrollView scroll = new ScrollView(activity);
         scroll.setFocusable(false);
