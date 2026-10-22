@@ -35,7 +35,7 @@ import java.util.List;
 import java.util.concurrent.Executors;
 
 /**
- * SHELL_JAR_SETTINGS_REDO v10
+ * SHELL_JAR_SETTINGS_REDO v10b
  * 淡蓝背景 + 完整线路列表可滚动 + 下载线程需确认 + 账号登录壳子列表带高亮
  */
 public final class JarPanSettingsShell {
@@ -473,6 +473,30 @@ public final class JarPanSettingsShell {
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         box.addView(mid);
         return box;
+    }
+
+    /** 与手机端截图档位对齐 */
+    private static List<String> threadOptionsFor(ThreadItem item) {
+        List<String> opts = new ArrayList<>();
+        if (item.allowAuto) opts.add("自动");
+        int[] nums;
+        if ("quarkThread".equals(item.key)) {
+            nums = new int[]{1, 2, 4, 8, 12, 16, 24, 32, 48, 64};
+        } else if ("quarkThreadVip".equals(item.key)) {
+            nums = new int[]{1, 2, 4, 8, 12, 16, 24, 32};
+        } else if ("baiduThread".equals(item.key)) {
+            nums = new int[]{1, 2, 4, 6, 8, 10, 12, 16, 24, 32};
+        } else if ("xunleiThread".equals(item.key)) {
+            nums = new int[]{1, 2, 4, 6, 8, 10, 12, 16, 24, 32};
+        } else if ("aliThread".equals(item.key)) {
+            nums = new int[]{1, 2, 4, 8, 12, 16, 24, 32, 48, 64, 96, 128};
+        } else if (item.allowAuto) {
+            nums = new int[]{1, 2, 4, 8, 12, 16, 32, 64, 128};
+        } else {
+            nums = new int[]{1, 2, 4, 6, 8, 10, 12, 16, 24, 32, 48, 64, 128};
+        }
+        for (int n : nums) opts.add(String.valueOf(n));
+        return opts;
     }
 
     private static void openThreadPicker(Activity activity, ThreadItem item, AlertDialog parent, Runnable onSaved) {
