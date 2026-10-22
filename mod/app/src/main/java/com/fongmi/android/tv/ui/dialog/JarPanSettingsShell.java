@@ -35,7 +35,7 @@ import java.util.List;
 import java.util.concurrent.Executors;
 
 /**
- * SHELL_JAR_SETTINGS_REDO v13
+ * SHELL_JAR_SETTINGS_REDO v14
  * 淡蓝背景 + 完整线路列表可滚动 + 下载线程需确认 + 账号登录壳子列表带高亮
  */
 public final class JarPanSettingsShell {
@@ -85,29 +85,46 @@ public final class JarPanSettingsShell {
         }
     }
 
+
     private static volatile long sBypassLoginUntil = 0;
 
     public static boolean isShellPanel(String id) {
-        if (!isTelevision()) return false; // 手机端不拦截
-        if (TextUtils.isEmpty(id)) return false;
-        String s = id.toLowerCase();
-        boolean login = s.contains("login") || s.contains("panlogin") || id.contains(ID_LOGIN);
-        // 点选壳子项后短时放行，让 jar 弹出真正的扫码/下级页
-        if (login && android.os.SystemClock.uptimeMillis() < sBypassLoginUntil) return false;
-        return s.contains("playlineorder")
-                || s.contains("panthread")
-                || login
-                || id.contains(ID_LINE_ORDER)
-                || id.contains(ID_THREAD);
+        return isShellPanel(id, null);
+    }
+
+    public static boolean isShellPanel(String id, String name) {
+        if (!isTelevision()) return false;
+        String s = id == null ? "" : id.toLowerCase().trim();
+        String n = name == null ? "" : name.trim();
+        if (android.os.SystemClock.uptimeMillis() < sBypassLoginUntil) {
+            if (s.contains("login") || n.contains("账号") || n.contains("帐号")) return false;
+        }
+        // 登录：id / 名 / 常见 key
+        if (s.contains("login") || s.contains("panlogin") || s.equals("panloginhubsettings")
+                || n.contains("账号登录") || n.contains("帐号登录") || n.equals("账号登录"))
+            return true;
+        if (s.contains("playlineorder") || s.contains("lineorder") || n.contains("线路排序"))
+            return true;
+        if (s.contains("panthread") || s.contains("threadhub") || n.contains("下载线程"))
+            return true;
+        return false;
     }
 
     public static void open(Activity activity, String siteKey, String id) {
+        open(activity, siteKey, id, null);
+    }
+
+    public static void open(Activity activity, String siteKey, String id, String name) {
         if (activity == null || activity.isFinishing()) return;
         if (!isTelevision()) return;
-        if (sOpening) return;
+        sOpening = false; // 永不因脏标记跳过
         sOpening = true;
         try {
-            openInner(activity, siteKey, id);
+            if (name != null && (name.contains("账号登录") || name.contains("帐号登录"))) {
+                openLogin(activity, siteKey);
+                return;
+            }
+            openInner(activity, siteKey, id != null ? id : "");
         } catch (Throwable e) {
             sOpening = false;
         }
@@ -897,7 +914,14 @@ public final class JarPanSettingsShell {
         dialog.setCancelable(true);
         dialog.setOnShowListener(d -> {
             styleWindow(dialog);
-            if (!rows.isEmpty()) rows.get(0).post(rows.get(0)::requestFocus);
+            if (!rows.isEmpty()) {
+                LinearLayout first = rows.get(0);
+                first.post(() -> {
+                    for (LinearLayout r : rows) applyRowFocus(activity, r, false);
+                    applyRowFocus(activity, first, true);
+                    first.requestFocus();
+                });
+            }
         });
         attachDismissFinish(activity, dialog);
         try {
@@ -993,10 +1017,15 @@ public final class JarPanSettingsShell {
     private static void applyRowFocus(Activity a, View v, boolean has) {
         GradientDrawable g = new GradientDrawable();
         g.setCornerRadius(dp(a, 10));
-        g.setColor(has ? BG_ROW_FOCUS : BG_ROW);
-        if (has) g.setStroke(dp(a, 3), STROKE_FOCUS);
-        else g.setStroke(dp(a, 1), 0xFF90CAF9);
+        if (has) {
+            g.setColor(0xFF64B5F6);
+            g.setStroke(dp(a, 4), 0xFF0D47A1);
+        } else {
+            g.setColor(BG_ROW);
+            g.setStroke(dp(a, 1), 0xFF90CAF9);
+        }
         v.setBackground(g);
+        try { v.setElevation(has ? dp(a, 8) : 0); } catch (Throwable ignored) {}
     }
 
     private static LinearLayout makeRow(Activity a, String title, String sub) {

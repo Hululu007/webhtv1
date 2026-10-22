@@ -155,35 +155,35 @@ def patch_site_api() -> None:
 
 
 def patch_video() -> None:
-    snip = """
-        // SHELL_JAR_SETTINGS_REDO: TV shell panels (line order / thread)
-        try {
-            if (com.fongmi.android.tv.ui.dialog.JarPanSettingsShell.isShellPanel(getId())) {
-                com.fongmi.android.tv.ui.dialog.JarPanSettingsShell.open(this, getKey(), getId());
-                return;
-            }
-        } catch (Throwable ignored) {
-        }
-        // TV 账号登录：不拦截 jar，只补蓝框高亮
-        try {
-            String _sid = getId();
-            if (_sid != null) {
-                String _s = _sid.toLowerCase();
-                if (_s.contains("panlogin") || _s.contains("login")) {
-                    com.fongmi.android.tv.ui.dialog.JarPanSettingsShell.scheduleLoginFocusEnhance(this);
-                }
-            }
-        } catch (Throwable ignored) {
-        }
-"""
+    snip = (
+        "\n"
+        "        // SHELL_JAR_SETTINGS_REDO: TV 线路排序/下载线程/账号登录\n"
+        "        try {\n"
+        "            String _id = getId();\n"
+        "            String _name = null;\n"
+        "            try { _name = getName(); } catch (Throwable ignored) {}\n"
+        "            if (com.fongmi.android.tv.ui.dialog.JarPanSettingsShell.isShellPanel(_id, _name)) {\n"
+        "                com.fongmi.android.tv.ui.dialog.JarPanSettingsShell.open(this, getKey(), _id, _name);\n"
+        "                return;\n"
+        "            }\n"
+        "        } catch (Throwable ignored) {\n"
+        "        }\n"
+    )
     for flavor in ("leanback", "mobile"):
         path = ROOT / f"app/src/{flavor}/java/com/fongmi/android/tv/ui/activity/VideoActivity.java"
         if not path.is_file():
             continue
         t = path.read_text(encoding="utf-8")
-        if "JarPanSettingsShell.open" in t:
-            print("[mod] VideoActivity already", flavor)
+        if "SHELL_JAR_SETTINGS_REDO: TV 线路排序/下载线程/账号登录" in t:
+            print("[mod] VideoActivity already v14", flavor)
             continue
+        # remove any previous SHELL_JAR_SETTINGS_REDO blocks near checkId
+        t = re.sub(
+            r"\n[ \t]*// SHELL_JAR_SETTINGS_REDO[\s\S]*?catch \(Throwable ignored\) \{\s*\}",
+            "",
+            t,
+            count=5,
+        )
         m = re.search(r"(private void checkId\(\)\s*\{)", t)
         if not m:
             print("[mod] WARN no checkId", flavor)
