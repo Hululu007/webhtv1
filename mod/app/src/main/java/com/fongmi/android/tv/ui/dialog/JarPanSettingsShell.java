@@ -35,7 +35,7 @@ import java.util.List;
 import java.util.concurrent.Executors;
 
 /**
- * SHELL_JAR_SETTINGS_REDO v11
+ * SHELL_JAR_SETTINGS_REDO v12
  * 淡蓝背景 + 完整线路列表可滚动 + 下载线程需确认 + 账号登录壳子列表带高亮
  */
 public final class JarPanSettingsShell {
@@ -119,149 +119,207 @@ public final class JarPanSettingsShell {
     }
 
 
+
+    private static volatile boolean sLoginEnhanceActive = false;
+    private static android.os.Handler sLoginHandler;
+    private static Runnable sLoginPoll;
+    private static View sLastPainted;
+
     /**
-     * TV 账号登录：不替换 jar 弹窗，仅在弹出后给可聚焦行加蓝框。
-     * 可重复调用；内部限次扫描 Window 列表。
+     * TV 账号登录：不替换 jar UI。弹窗出现后持续把「当前焦点」画成蓝框，
+     * 并尽量把列表行设为可聚焦（兼容 Android 16 / 小米 反射限制）。
      */
     public static void scheduleLoginFocusEnhance(Activity activity) {
         if (activity == null || !isTelevision()) return;
-        android.os.Handler h = new android.os.Handler(android.os.Looper.getMainLooper());
-        final int[] step = {0};
-        Runnable tick = new Runnable() {
+        sLoginEnhanceActive = true;
+        if (sLoginHandler == null) {
+            sLoginHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+        }
+        if (sLoginPoll != null) {
+            sLoginHandler.removeCallbacks(sLoginPoll);
+        }
+        final long deadline = android.os.SystemClock.uptimeMillis() + 20000;
+        sLoginPoll = new Runnable() {
             @Override
             public void run() {
-                if (activity.isFinishing()) return;
-                boolean hit = tryEnhanceLoginDialogs(activity);
-                step[0]++;
-                // 约 3 秒内多次尝试，覆盖 jar 延迟 show
-                if (!hit && step[0] < 20) {
-                    h.postDelayed(this, 150);
-                } else if (hit && step[0] < 8) {
-                    // 命中后再补几次，防止 ListView 晚绑定
-                    h.postDelayed(this, 200);
+                if (!sLoginEnhanceActive || activity.isFinishing()) {
+                    clearPaint(sLastPainted);
+                    sLastPainted = null;
+                    return;
+                }
+                try {
+                    prepareFocusableRows(activity);
+                    View focus = activity.getCurrentFocus();
+                    if (focus == null) focus = findFocusedViewInWindows();
+                    if (focus != null) {
+                        if (focus != sLastPainted) {
+                            clearPaint(sLastPainted);
+                            sLastPainted = focus;
+                        }
+                        paintBlue(focus);
+                    }
+                } catch (Throwable ignored) {
+                }
+                if (android.os.SystemClock.uptimeMillis() < deadline) {
+                    sLoginHandler.postDelayed(this, 80);
+                } else {
+                    sLoginEnhanceActive = false;
                 }
             }
         };
-        h.postDelayed(tick, 200);
+        // 多段延迟启动，覆盖 jar 异步 show
+        sLoginHandler.postDelayed(sLoginPoll, 120);
+        sLoginHandler.postDelayed(sLoginPoll, 400);
+        sLoginHandler.postDelayed(sLoginPoll, 900);
+        // 20s 后自动停
+        sLoginHandler.postDelayed(() -> {
+            sLoginEnhanceActive = false;
+            clearPaint(sLastPainted);
+            sLastPainted = null;
+        }, 20000);
     }
 
-    private static boolean tryEnhanceLoginDialogs(Activity activity) {
-        boolean any = false;
+    private static void prepareFocusableRows(Activity activity) {
+        for (View root : collectRootViews(activity)) {
+            if (root == null || root.getVisibility() != View.VISIBLE) continue;
+            // 跳过纯 Activity 内容过大的主界面（可选：只处理较「矮」的 dialog 窗）
+            try {
+                if (root == activity.getWindow().getDecorView()) {
+                    // 仍遍历，但 dialog 通常是别的 root
+                }
+            } catch (Throwable ignored) {
+            }
+            walkPrepare(root, 0);
+        }
+    }
+
+    private static void walkPrepare(View v, int depth) {
+        if (v == null || depth > 24) return;
+        try {
+            if (v instanceof android.widget.ListView) {
+                android.widget.ListView lv = (android.widget.ListView) v;
+                lv.setItemsCanFocus(true);
+                lv.setFocusable(true);
+                lv.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
+            }
+            if (v instanceof ScrollView) {
+                v.setFocusable(false);
+                ((ViewGroup) v).setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
+            }
+            if (v instanceof ViewGroup) {
+                ViewGroup g = (ViewGroup) v;
+                // 常见：一行是 LinearLayout / RelativeLayout 可点
+                if (v.isClickable() || (v.hasOnClickListeners())) {
+                    v.setFocusable(true);
+                    v.setFocusableInTouchMode(true);
+                }
+                for (int i = 0; i < g.getChildCount(); i++) {
+                    walkPrepare(g.getChildAt(i), depth + 1);
+                }
+            } else if (v instanceof TextView) {
+                View parent = (View) v.getParent();
+                if (parent != null && (parent.isClickable() || parent.hasOnClickListeners())) {
+                    parent.setFocusable(true);
+                    parent.setFocusableInTouchMode(true);
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static View findFocusedViewInWindows() {
+        for (View root : collectRootViews(null)) {
+            try {
+                View f = root.findFocus();
+                if (f != null) return f;
+            } catch (Throwable ignored) {
+            }
+        }
+        return null;
+    }
+
+    private static java.util.List<View> collectRootViews(Activity activity) {
+        java.util.ArrayList<View> out = new java.util.ArrayList<>();
+        // 1) WindowManagerGlobal.mViews
         try {
             Class<?> wmg = Class.forName("android.view.WindowManagerGlobal");
             Object inst = wmg.getMethod("getInstance").invoke(null);
-            java.lang.reflect.Field f = wmg.getDeclaredField("mViews");
-            f.setAccessible(true);
-            Object views = f.get(inst);
-            if (!(views instanceof java.util.List)) return false;
-            java.util.List<?> list = (java.util.List<?>) views;
-            for (Object o : list) {
-                if (!(o instanceof View)) continue;
-                View root = (View) o;
-                if (root.getVisibility() != View.VISIBLE) continue;
-                if (!looksLikeLoginDialog(root)) continue;
-                if (enhanceTree(root)) any = true;
-            }
-        } catch (Throwable ignored) {
-        }
-        // 回退：当前焦点所在树
-        try {
-            View focus = activity.getCurrentFocus();
-            if (focus != null) {
-                View root = focus.getRootView();
-                if (looksLikeLoginDialog(root) && enhanceTree(root)) any = true;
-            }
-        } catch (Throwable ignored) {
-        }
-        return any;
-    }
-
-    private static boolean looksLikeLoginDialog(View root) {
-        try {
-            StringBuilder sb = new StringBuilder();
-            collectText(root, sb, 0);
-            String all = sb.toString();
-            if (all.contains("选择账号") || all.contains("导入项目") || all.contains("账号登录")
-                    || all.contains("上下键移动") || all.contains("OK选择") || all.contains("OK 选择")) {
-                return true;
-            }
-            // 次要：含「夸克/百度」且像设置列表的弹层
-            if ((all.contains("夸克") || all.contains("网盘")) && all.contains("登录")) return true;
-        } catch (Throwable ignored) {
-        }
-        return false;
-    }
-
-    private static void collectText(View v, StringBuilder sb, int depth) {
-        if (v == null || depth > 18) return;
-        if (v instanceof TextView) {
-            CharSequence cs = ((TextView) v).getText();
-            if (cs != null) sb.append(cs).append(' ');
-        }
-        if (v instanceof ViewGroup) {
-            ViewGroup g = (ViewGroup) v;
-            int n = g.getChildCount();
-            for (int i = 0; i < n; i++) collectText(g.getChildAt(i), sb, depth + 1);
-        }
-    }
-
-    private static boolean enhanceTree(View root) {
-        boolean changed = false;
-        try {
-            if (root instanceof android.widget.ListView) {
-                android.widget.ListView lv = (android.widget.ListView) root;
-                lv.setItemsCanFocus(true);
-                lv.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
-                changed = true;
-            }
-            if (root instanceof ViewGroup) {
-                ViewGroup g = (ViewGroup) root;
-                // ScrollView 不抢焦
-                if (root instanceof ScrollView) {
-                    root.setFocusable(false);
-                    g.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
-                }
-                for (int i = 0; i < g.getChildCount(); i++) {
-                    if (enhanceTree(g.getChildAt(i))) changed = true;
-                }
-            }
-            // 可点击行 / 较大 TextView 行
-            boolean rowLike = root.isClickable() || root.isFocusable()
-                    || (root instanceof TextView && ((TextView) root).getText() != null
-                    && ((TextView) root).getText().length() > 0 && root.getHeight() > 0);
-            if (rowLike && !(root instanceof android.widget.Button)
-                    && !(root instanceof android.widget.EditText)) {
-                if (!root.isFocusable()) {
-                    root.setFocusable(true);
-                    root.setFocusableInTouchMode(true);
-                    changed = true;
-                }
-                Object tag = root.getTag(0x20F0C05);
-                if (tag == null) {
-                    root.setTag(0x20F0C05, Boolean.TRUE);
-                    final android.graphics.drawable.Drawable oldBg = root.getBackground();
-                    root.setOnFocusChangeListener((v, has) -> {
-                        try {
-                            if (has) {
-                                android.graphics.drawable.GradientDrawable g =
-                                        new android.graphics.drawable.GradientDrawable();
-                                g.setCornerRadius(dp(v, 8));
-                                g.setColor(0xFFBBDEFB);
-                                g.setStroke(dp(v, 3), 0xFF1976D2);
-                                v.setBackground(g);
-                            } else {
-                                if (oldBg != null) v.setBackground(oldBg);
-                                else v.setBackgroundColor(0x00000000);
+            for (String name : new String[]{"mViews", "mRoots"}) {
+                try {
+                    java.lang.reflect.Field f = wmg.getDeclaredField(name);
+                    f.setAccessible(true);
+                    Object val = f.get(inst);
+                    if (val instanceof java.util.List) {
+                        for (Object o : (java.util.List<?>) val) {
+                            if (o instanceof View) out.add((View) o);
+                            else {
+                                // ViewRootImpl.mView
+                                try {
+                                    java.lang.reflect.Field mv = o.getClass().getDeclaredField("mView");
+                                    mv.setAccessible(true);
+                                    Object v = mv.get(o);
+                                    if (v instanceof View) out.add((View) v);
+                                } catch (Throwable ignored) {
+                                }
                             }
-                        } catch (Throwable ignored) {
                         }
-                    });
-                    changed = true;
+                    }
+                } catch (Throwable ignored) {
                 }
             }
         } catch (Throwable ignored) {
         }
-        return changed;
+        // 2) activity decor
+        if (activity != null) {
+            try {
+                out.add(activity.getWindow().getDecorView());
+            } catch (Throwable ignored) {
+            }
+        }
+        return out;
+    }
+
+    private static void paintBlue(View v) {
+        if (v == null) return;
+        try {
+            // 优先画在可点父行上，避免只亮一个字
+            View target = v;
+            View p = v;
+            for (int i = 0; i < 4 && p != null; i++) {
+                if (p.isClickable() || p.hasOnClickListeners() || p.isFocusable()) {
+                    target = p;
+                }
+                if (p.getParent() instanceof View) p = (View) p.getParent();
+                else break;
+            }
+            Object tagged = target.getTag(0x20F0C06);
+            if (!(tagged instanceof android.graphics.drawable.Drawable)
+                    && !(tagged instanceof Boolean)) {
+                // 保存原背景一次
+                target.setTag(0x20F0C06, target.getBackground());
+            }
+            android.graphics.drawable.GradientDrawable g =
+                    new android.graphics.drawable.GradientDrawable();
+            g.setCornerRadius(dp(target, 8));
+            g.setColor(0x663D9EFF);
+            g.setStroke(dp(target, 3), 0xFF1E88E5);
+            target.setBackground(g);
+            sLastPainted = target;
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static void clearPaint(View v) {
+        if (v == null) return;
+        try {
+            Object old = v.getTag(0x20F0C06);
+            if (old instanceof android.graphics.drawable.Drawable) {
+                v.setBackground((android.graphics.drawable.Drawable) old);
+            } else if (old == null || old instanceof Boolean) {
+                // leave
+            }
+        } catch (Throwable ignored) {
+        }
     }
 
     private static int dp(View v, int d) {
