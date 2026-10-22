@@ -43,7 +43,7 @@ public final class JarPanSettingsShell {
     public static final String ID_THREAD = "panThreadHubSettings";
     public static final String ID_LOGIN = "panLoginHubSettings";
 
-    private static final String PREF_ORDER = "shell_jar_line_order_json";
+    private static final String PREF_ORDER = "playLineOrder"; // jar L2 key
     private static final String PREF_THREAD = "shell_jar_download_threads";
     private static final int[] THREAD_OPTS = {1, 2, 3, 4, 6, 8, 12, 16};
 
@@ -424,14 +424,12 @@ public final class JarPanSettingsShell {
 
     private static List<String> defaultOrder() {
         List<String> d = new ArrayList<>();
-        d.add("夸克");
-        d.add("UC");
-        d.add("百度");
-        d.add("迅雷");
-        d.add("阿里");
-        d.add("天翼");
-        d.add("115");
-        d.add("移动");
+        d.add("夸克无限");
+        d.add("夸克原画");
+        d.add("夸克普画");
+        d.add("百度无限");
+        d.add("百度原画");
+        d.add("UC无限");
         return d;
     }
 
@@ -459,8 +457,15 @@ public final class JarPanSettingsShell {
         try {
             String raw = Prefers.getString(PREF_ORDER, "");
             if (TextUtils.isEmpty(raw)) return out;
-            JSONArray arr = new JSONArray(raw);
-            for (int i = 0; i < arr.length(); i++) out.add(arr.getString(i));
+            if (raw.trim().startsWith("[")) {
+                JSONArray arr = new JSONArray(raw);
+                for (int i = 0; i < arr.length(); i++) out.add(arr.getString(i));
+            } else {
+                for (String p : raw.split(",")) {
+                    String s = p.trim();
+                    if (!s.isEmpty()) out.add(s);
+                }
+            }
         } catch (Throwable ignored) {
         }
         return out;
@@ -468,25 +473,13 @@ public final class JarPanSettingsShell {
 
     private static void saveOrder(String siteKey, List<String> items) {
         try {
-            JSONArray arr = new JSONArray();
-            for (String s : items) arr.put(s);
-            Prefers.put(PREF_ORDER, arr.toString());
-        } catch (Throwable ignored) {
-        }
-        if (TextUtils.isEmpty(siteKey)) return;
-        try {
-            String payload = new JSONArray(items).toString();
-            for (String act : new String[]{
-                    "setPlayLineOrder:" + payload,
-                    "savePlayLineOrder:" + payload,
-                    "playLineOrderSettings:" + payload
-            }) {
-                try {
-                    SiteApi.action(siteKey, act);
-                    break;
-                } catch (Throwable ignored) {
-                }
+            // jar uses comma-separated playLineOrder
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < items.size(); i++) {
+                if (i > 0) sb.append(',');
+                sb.append(items.get(i));
             }
+            Prefers.put(PREF_ORDER, sb.toString());
         } catch (Throwable ignored) {
         }
     }

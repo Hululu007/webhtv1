@@ -1,20 +1,16 @@
-# SHELL_JAR_SETTINGS_REDO
+# SHELL_JAR_SETTINGS_REDO v3
 
-## 做什么
-用壳子原生 Dialog + RecyclerView 重做综合设置里：
-- 线路排序 (`playLineOrderSettings`)
-- 下载线程 (`panThreadHubSettings`)
+## 根因（来自 feimao jar 反编译）
+- 线路排序在 `Bh` / `Z8` 里用 `ListView` + 行内上/下箭头
+- 弹窗依赖 `Init.activityForDialog()`；上游壳子 Init 只有 `set/context`，TV 上焦点易异常
+- 列表项 id：`playLineOrderSettings` / `panThreadHubSettings` / `panLoginHubSettings`
+- 顺序存储键：`playLineOrder`（逗号分隔）
 
-不再依赖 jar 内 ListView/ScrollView 弹窗（TV 遥控器焦点问题）。
-
-## 数据
-- 优先 `SiteApi.action(siteKey, …)` 读写（多种 action 名尝试）
-- 失败则用 `Prefers` 本地保存，保证 UI 可用
+## 壳子改动
+1. `catvod/Init.java`：增加 `activityForDialog` / `setActivity`
+2. `App` 生命周期：resume 时 `Init.setActivity(activity)`
+3. `SiteApi.detailContent` + `action`：拦截上述 id，打开壳子原生面板
+4. 线路排序读写 `Prefers` 键 `playLineOrder`（与 jar 一致）
 
 ## 回退
-1. 删除 `mod/hooks/inject_jar_settings_shell.py`
-2. 删除 `mod/app/src/main/java/com/fongmi/android/tv/ui/dialog/JarPanSettingsShell.java`
-3. 从 `apply.sh` 去掉对应段（可选）
-4. 重新构建
-
-标记：`SHELL_JAR_SETTINGS_REDO`
+删 `hooks/inject_jar_settings_shell.py`、`JarPanSettingsShell.java`，恢复上游 `Init.java` 后重建。
