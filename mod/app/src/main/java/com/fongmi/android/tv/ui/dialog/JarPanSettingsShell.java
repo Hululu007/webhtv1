@@ -35,7 +35,7 @@ import java.util.List;
 import java.util.concurrent.Executors;
 
 /**
- * SHELL_JAR_SETTINGS_REDO v12
+ * SHELL_JAR_SETTINGS_REDO v13
  * 淡蓝背景 + 完整线路列表可滚动 + 下载线程需确认 + 账号登录壳子列表带高亮
  */
 public final class JarPanSettingsShell {
@@ -85,14 +85,18 @@ public final class JarPanSettingsShell {
         }
     }
 
+    private static volatile long sBypassLoginUntil = 0;
+
     public static boolean isShellPanel(String id) {
         if (!isTelevision()) return false; // 手机端不拦截
         if (TextUtils.isEmpty(id)) return false;
         String s = id.toLowerCase();
-        // 账号登录不拦截：下一级是 jar 内页面，壳子点选只会关窗
-        if (s.contains("login") || s.contains("panlogin") || (id != null && id.contains(ID_LOGIN))) return false;
+        boolean login = s.contains("login") || s.contains("panlogin") || id.contains(ID_LOGIN);
+        // 点选壳子项后短时放行，让 jar 弹出真正的扫码/下级页
+        if (login && android.os.SystemClock.uptimeMillis() < sBypassLoginUntil) return false;
         return s.contains("playlineorder")
                 || s.contains("panthread")
+                || login
                 || id.contains(ID_LINE_ORDER)
                 || id.contains(ID_THREAD);
     }
@@ -113,6 +117,8 @@ public final class JarPanSettingsShell {
         String s = id == null ? "" : id.toLowerCase();
         if (s.contains("thread") || (id != null && id.contains(ID_THREAD))) {
             openThread(activity);
+        } else if (s.contains("login") || (id != null && id.contains(ID_LOGIN))) {
+            openLogin(activity, siteKey);
         } else {
             openLineOrder(activity);
         }
@@ -813,11 +819,13 @@ public final class JarPanSettingsShell {
     // -------------------- 账号登录（壳子列表 + 高亮） --------------------
 
 
+
+    /** TV 账号登录：与线路排序同一套壳子行+蓝框（已验证有效），不再依赖 jar 焦点增强 */
     private static void openLogin(Activity activity, String siteKey) {
         LinearLayout root = column(activity);
         root.setBackgroundColor(BG_PANEL);
-        root.addView(title(activity, "选择账号或导入项目"));
-        root.addView(sub(activity, "上下键移动焦点 · OK 选择 · 返回关闭"));
+        root.addView(title(activity, "账号登录"));
+        root.addView(sub(activity, "上下键移动 · OK 进入该网盘登录（下级仍走 jar）"));
 
         final ScrollView scroll = new ScrollView(activity);
         scroll.setFocusable(false);
@@ -825,34 +833,28 @@ public final class JarPanSettingsShell {
         LinearLayout list = new LinearLayout(activity);
         list.setOrientation(LinearLayout.VERTICAL);
         list.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
-        scroll.addView(list);
-        int listH = Math.min(dp(activity, 400),
-                (int) (activity.getResources().getDisplayMetrics().heightPixels * 0.5f));
-        root.addView(scroll, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, listH));
 
-        // 静态入口，避免与 jar 异步抢焦
-        String[][] rowsData = new String[][]{
-                {"夸克网盘", "登录 / 切换账号"},
-                {"UC网盘", "登录 / 切换账号"},
-                {"百度网盘", "登录 / 切换账号"},
-                {"迅雷网盘", "登录 / 切换账号"},
-                {"阿里云盘", "登录 / 切换账号"},
-                {"天翼云盘", "登录 / 切换账号"},
-                {"115网盘", "登录 / 切换账号"},
-                {"移动云盘", "登录 / 切换账号"},
-                {"光鸭云盘", "登录 / 切换账号"},
+        // 与肥猫综合设置常见入口一致
+        final String[][] entries = new String[][]{
+                {"夸克网盘", "quark", "扫码/更新登录"},
+                {"UC网盘", "uc", "扫码/更新登录"},
+                {"百度网盘", "baidu", "扫码/更新登录"},
+                {"迅雷网盘", "xunlei", "扫码/更新登录"},
+                {"阿里云盘", "ali", "扫码/更新登录"},
+                {"天翼云盘", "cloud189", "扫码/更新登录"},
+                {"115网盘", "pan115", "扫码/更新登录"},
+                {"移动云盘", "cloud139", "扫码/更新登录"},
+                {"光鸭云盘", "guangya", "扫码/更新登录"},
         };
 
-        AlertDialog dialog = buildDialog(activity, root);
-        dialog.setCancelable(true);
-        dialog.setCanceledOnTouchOutside(true);
+        AlertDialog[] dialogRef = new AlertDialog[1];
+        List<LinearLayout> rows = new ArrayList<>();
 
-        List<LinearLayout> views = new ArrayList<>();
-        for (String[] r : rowsData) {
-            LinearLayout row = makeRow(activity, r[0], r[1]);
+        for (String[] e : entries) {
+            LinearLayout row = makeRow(activity, e[0], e[2]);
             row.setId(View.generateViewId());
-            String name = r[0];
+            final String panKey = e[1];
+            final String panName = e[0];
             row.setOnFocusChangeListener((v, has) -> {
                 applyRowFocus(activity, v, has);
                 if (has) {
@@ -870,34 +872,70 @@ public final class JarPanSettingsShell {
                 }
             });
             row.setOnClickListener(v -> {
-                trySelectAccount(siteKey, name);
-                dialog.dismiss();
+                // 放行 jar 弹下级，避免再被壳子拦截
+                sBypassLoginUntil = android.os.SystemClock.uptimeMillis() + 8000;
+                if (dialogRef[0] != null) dialogRef[0].dismiss();
+                sOpening = false;
+                new android.os.Handler(android.os.Looper.getMainLooper()).post(() ->
+                        launchJarPanLogin(activity, siteKey, panKey, panName));
             });
-            views.add(row);
+            rows.add(row);
             list.addView(row);
         }
-        for (int i = 0; i < views.size(); i++) {
-            if (i > 0) views.get(i).setNextFocusUpId(views.get(i - 1).getId());
-            if (i + 1 < views.size()) views.get(i).setNextFocusDownId(views.get(i + 1).getId());
+        for (int i = 0; i < rows.size(); i++) {
+            if (i > 0) rows.get(i).setNextFocusUpId(rows.get(i - 1).getId());
+            if (i + 1 < rows.size()) rows.get(i).setNextFocusDownId(rows.get(i + 1).getId());
         }
+        scroll.addView(list);
+        int listH = Math.min(dp(activity, 420),
+                (int) (activity.getResources().getDisplayMetrics().heightPixels * 0.55f));
+        root.addView(scroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, listH));
 
+        AlertDialog dialog = buildDialog(activity, root);
+        dialogRef[0] = dialog;
+        dialog.setCancelable(true);
         dialog.setOnShowListener(d -> {
             styleWindow(dialog);
-            if (!views.isEmpty()) views.get(0).post(views.get(0)::requestFocus);
-        });
-        dialog.setOnKeyListener((d, keyCode, event) -> {
-            if (keyCode == KeyEvent.KEYCODE_BACK && event.getAction() == KeyEvent.ACTION_UP) {
-                dialog.dismiss();
-                return true;
-            }
-            return false;
+            if (!rows.isEmpty()) rows.get(0).post(rows.get(0)::requestFocus);
         });
         attachDismissFinish(activity, dialog);
         try {
             dialog.show();
-            sizeWindow(dialog, activity, 0.7f);
+            sizeWindow(dialog, activity, 0.68f);
         } catch (Throwable e) {
             sOpening = false;
+        }
+    }
+
+    /** 尽量触发 jar 内对应网盘登录页（扫码等） */
+    private static void launchJarPanLogin(Activity activity, String siteKey, String panKey, String panName) {
+        if (TextUtils.isEmpty(siteKey)) return;
+        String[] acts = new String[]{
+                panKey,
+                panName,
+                "login:" + panKey,
+                "login:" + panName,
+                "扫码登录" + panName.replace("网盘", "").replace("云盘", ""),
+                "扫码登录" + panKey,
+                panKey + "Login",
+                "panLogin:" + panKey,
+                "panLoginHubSettings",
+        };
+        for (String act : acts) {
+            try {
+                Result r = SiteApi.action(siteKey, act);
+                if (r != null) {
+                    // 有响应即认为已交给 jar；具体是否弹窗取决于 jar
+                    return;
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        // 最后再走一次综合入口
+        try {
+            SiteApi.action(siteKey, "panLoginHubSettings");
+        } catch (Throwable ignored) {
         }
     }
 
