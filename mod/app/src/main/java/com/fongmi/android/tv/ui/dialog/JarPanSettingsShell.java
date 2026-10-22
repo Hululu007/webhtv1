@@ -32,7 +32,7 @@ import java.util.List;
 import java.util.concurrent.Executors;
 
 /**
- * SHELL_JAR_SETTINGS_REDO v7
+ * SHELL_JAR_SETTINGS_REDO v8
  * 淡蓝背景 + 完整线路列表可滚动 + 下载线程需确认 + 账号登录壳子列表带高亮
  */
 public final class JarPanSettingsShell {
@@ -58,12 +58,12 @@ public final class JarPanSettingsShell {
     public static boolean isShellPanel(String id) {
         if (TextUtils.isEmpty(id)) return false;
         String s = id.toLowerCase();
+        // 账号登录不拦截：壳子抢焦会狂闪且返回失效
+        if (s.contains("login") || s.contains("panlogin") || id.contains(ID_LOGIN)) return false;
         return s.contains("playlineorder")
                 || s.contains("panthread")
-                || s.contains("panlogin")
                 || id.contains(ID_LINE_ORDER)
-                || id.contains(ID_THREAD)
-                || id.contains(ID_LOGIN);
+                || id.contains(ID_THREAD);
     }
 
     public static void open(Activity activity, String siteKey, String id) {
@@ -71,8 +71,6 @@ public final class JarPanSettingsShell {
         String s = id == null ? "" : id.toLowerCase();
         if (s.contains("thread") || (id != null && id.contains(ID_THREAD))) {
             openThread(activity);
-        } else if (s.contains("login") || (id != null && id.contains(ID_LOGIN))) {
-            openLogin(activity, siteKey);
         } else {
             openLineOrder(activity);
         }
@@ -97,6 +95,7 @@ public final class JarPanSettingsShell {
 
     // -------------------- 线路排序 --------------------
 
+
     private static void openLineOrder(Activity activity) {
         final List<String> items = mergeOrderList(readOrderPref());
         final int[] sel = {0};
@@ -104,13 +103,12 @@ public final class JarPanSettingsShell {
         LinearLayout root = column(activity);
         root.setBackgroundColor(BG_PANEL);
         root.addView(title(activity, "线路排序"));
-        root.addView(sub(activity, "上下键移动焦点 · 左右键上/下移 · 保存"));
+        root.addView(sub(activity, "上下键移动 · 左右键上/下移 · 保存"));
 
         final ScrollView scroll = new ScrollView(activity);
         scroll.setFocusable(false);
         scroll.setFillViewport(false);
         scroll.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
-        // 给足高度，条目多时可滚
         int listH = Math.min(dp(activity, 420), (int) (activity.getResources().getDisplayMetrics().heightPixels * 0.55f));
         final LinearLayout list = new LinearLayout(activity);
         list.setOrientation(LinearLayout.VERTICAL);
@@ -122,12 +120,8 @@ public final class JarPanSettingsShell {
 
         LinearLayout bar = new LinearLayout(activity);
         bar.setOrientation(LinearLayout.HORIZONTAL);
-        TextView btnUp = barBtn(activity, "上移");
-        TextView btnDown = barBtn(activity, "下移");
-        TextView btnSave = barBtn(activity, "保存");
         TextView btnReset = barBtn(activity, "重置");
-        bar.addView(btnUp);
-        bar.addView(btnDown);
+        TextView btnSave = barBtn(activity, "保存");
         bar.addView(btnReset);
         bar.addView(btnSave);
         root.addView(bar);
@@ -142,7 +136,6 @@ public final class JarPanSettingsShell {
                 row.setOnFocusChangeListener((v, has) -> {
                     if (has) {
                         sel[0] = idx;
-                        // 焦点行滚入可视区
                         scroll.post(() -> {
                             int top = v.getTop();
                             int bottom = v.getBottom();
@@ -157,19 +150,17 @@ public final class JarPanSettingsShell {
                 row.setOnKeyListener((v, keyCode, e) -> {
                     if (e.getAction() != KeyEvent.ACTION_DOWN) return false;
                     boolean moved = false;
-                    if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT
-                            || keyCode == KeyEvent.KEYCODE_DPAD_CENTER
-                            || keyCode == KeyEvent.KEYCODE_ENTER) {
+                    if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
                         if (sel[0] > 0) {
-                            String t = items.remove(sel[0]);
-                            items.add(sel[0] - 1, t);
+                            String tmp = items.remove(sel[0]);
+                            items.add(sel[0] - 1, tmp);
                             sel[0]--;
                             moved = true;
                         }
                     } else if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
                         if (sel[0] < items.size() - 1) {
-                            String t = items.remove(sel[0]);
-                            items.add(sel[0] + 1, t);
+                            String tmp = items.remove(sel[0]);
+                            items.add(sel[0] + 1, tmp);
                             sel[0]++;
                             moved = true;
                         }
@@ -191,22 +182,17 @@ public final class JarPanSettingsShell {
             for (int i = 0; i < n; i++) {
                 View c = list.getChildAt(i);
                 if (i + 1 < n) c.setNextFocusDownId(list.getChildAt(i + 1).getId());
-                else c.setNextFocusDownId(btnUp.getId());
+                else c.setNextFocusDownId(btnSave.getId());
                 if (i > 0) c.setNextFocusUpId(list.getChildAt(i - 1).getId());
             }
             if (n > 0) {
                 int last = list.getChildAt(n - 1).getId();
-                btnUp.setNextFocusUpId(last);
-                btnDown.setNextFocusUpId(last);
                 btnSave.setNextFocusUpId(last);
                 btnReset.setNextFocusUpId(last);
             }
         };
 
         AlertDialog dialog = buildDialog(activity, root);
-
-        btnUp.setOnClickListener(v -> move(items, sel, -1, refresh, list));
-        btnDown.setOnClickListener(v -> move(items, sel, 1, refresh, list));
         btnReset.setOnClickListener(v -> {
             items.clear();
             items.addAll(fullDefaultOrder());
@@ -220,7 +206,6 @@ public final class JarPanSettingsShell {
             saveOrder(items);
             dialog.dismiss();
         });
-
         dialog.setOnShowListener(d -> {
             styleWindow(dialog);
             refresh[0].run();
@@ -233,11 +218,12 @@ public final class JarPanSettingsShell {
         sizeWindow(dialog, activity, 0.72f);
     }
 
+
     private static void move(List<String> items, int[] sel, int delta, Runnable[] refresh, LinearLayout list) {
         int to = sel[0] + delta;
         if (to < 0 || to >= items.size()) return;
-        String t = items.remove(sel[0]);
-        items.add(to, t);
+        String tmp = items.remove(sel[0]);
+        items.add(to, tmp);
         sel[0] = to;
         int keep = sel[0];
         refresh[0].run();
@@ -246,9 +232,8 @@ public final class JarPanSettingsShell {
         });
     }
 
-    /** 已有顺序在前，缺的用完整默认补全，避免迅雷原画等被漏掉 */
     private static List<String> mergeOrderList(List<String> saved) {
-        LinkedHashSet<String> set = new LinkedHashSet<>();
+        java.util.LinkedHashSet<String> set = new java.util.LinkedHashSet<>();
         if (saved != null) set.addAll(saved);
         for (String d : fullDefaultOrder()) set.add(d);
         return new ArrayList<>(set);
@@ -259,8 +244,9 @@ public final class JarPanSettingsShell {
         try {
             String raw = Prefers.getString(PREF_ORDER, "");
             if (TextUtils.isEmpty(raw)) return out;
-            for (String p : raw.split(",")) {
-                String s = p.trim();
+            for (String part : raw.split(",")) {
+                String s = part.trim();
+                if ("迅雷会员".equals(s)) s = "迅雷智能";
                 if (!s.isEmpty()) out.add(s);
             }
         } catch (Throwable ignored) {
@@ -280,7 +266,6 @@ public final class JarPanSettingsShell {
         }
     }
 
-    /** 对齐 jar 常见完整画质线路（含迅雷/移动等） */
     private static List<String> fullDefaultOrder() {
         List<String> d = new ArrayList<>();
         d.add("夸克无限");
@@ -291,7 +276,7 @@ public final class JarPanSettingsShell {
         d.add("百度无限");
         d.add("百度原画");
         d.add("迅雷原画");
-        d.add("迅雷会员");
+        d.add("迅雷智能");
         d.add("阿里原画");
         d.add("天翼原画");
         d.add("115原画");
@@ -299,10 +284,6 @@ public final class JarPanSettingsShell {
         d.add("光鸭原画");
         return d;
     }
-
-    // -------------------- 下载线程（点选不关，确定才关） --------------------
-
-
 
     /** 与 jar 原界面一致：各网盘分项线程，不是全局一份 */
     private static final class ThreadItem {
@@ -368,13 +349,16 @@ public final class JarPanSettingsShell {
                 }
             });
             row.setOnClickListener(v -> openThreadPicker(activity, item, hubRef[0], () -> {
-                // refresh value text
                 String nv = readThreadVal(item.key, item.defVal);
-                if (row.getChildCount() >= 2) {
-                    View right = ((LinearLayout) row.getChildAt(0)).getChildAt(1);
-                    if (right instanceof TextView) {
-                        ((TextView) right).setText(formatThreadLabel(nv, item.allowAuto) + "  ›");
+                try {
+                    // box: [0]=dot View, [1]=mid LinearLayout -> [0]=name [1]=val
+                    if (row.getChildCount() >= 2 && row.getChildAt(1) instanceof LinearLayout) {
+                        LinearLayout mid = (LinearLayout) row.getChildAt(1);
+                        if (mid.getChildCount() >= 2 && mid.getChildAt(1) instanceof TextView) {
+                            ((TextView) mid.getChildAt(1)).setText(formatThreadLabel(nv, item.allowAuto) + "  ›");
+                        }
                     }
+                } catch (Throwable ignored) {
                 }
             }));
             rows.add(row);
