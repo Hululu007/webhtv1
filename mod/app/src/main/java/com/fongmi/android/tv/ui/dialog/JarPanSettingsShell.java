@@ -35,7 +35,7 @@ import java.util.List;
 import java.util.concurrent.Executors;
 
 /**
- * SHELL_JAR_SETTINGS_REDO v9
+ * SHELL_JAR_SETTINGS_REDO v10
  * 淡蓝背景 + 完整线路列表可滚动 + 下载线程需确认 + 账号登录壳子列表带高亮
  */
 public final class JarPanSettingsShell {
@@ -87,13 +87,12 @@ public final class JarPanSettingsShell {
         if (!isTelevision()) return false; // 手机端不拦截
         if (TextUtils.isEmpty(id)) return false;
         String s = id.toLowerCase();
+        // 账号登录不拦截：必须走 jar 多级菜单（登录/切换/导入）
+        if (s.contains("login") || s.contains("panlogin") || id.contains(ID_LOGIN)) return false;
         return s.contains("playlineorder")
                 || s.contains("panthread")
-                || s.contains("panlogin")
-                || s.contains("login")
                 || id.contains(ID_LINE_ORDER)
-                || id.contains(ID_THREAD)
-                || id.contains(ID_LOGIN);
+                || id.contains(ID_THREAD);
     }
 
     public static void open(Activity activity, String siteKey, String id) {
@@ -112,8 +111,6 @@ public final class JarPanSettingsShell {
         String s = id == null ? "" : id.toLowerCase();
         if (s.contains("thread") || (id != null && id.contains(ID_THREAD))) {
             openThread(activity);
-        } else if (s.contains("login") || (id != null && id.contains(ID_LOGIN))) {
-            openLogin(activity, siteKey);
         } else {
             openLineOrder(activity);
         }
@@ -487,11 +484,7 @@ public final class JarPanSettingsShell {
         String cur = readThreadVal(item.key, item.defVal);
         final String[] selected = {normalizeThread(cur, item.allowAuto)};
 
-        List<String> opts = new ArrayList<>();
-        if (item.allowAuto) opts.add("自动");
-        for (int n : new int[]{1, 2, 4, 6, 8, 10, 12, 16, 24, 32, 48, 64, 96, 128}) {
-            opts.add(String.valueOf(n));
-        }
+        List<String> opts = threadOptionsFor(item);
 
         ScrollView scroll = new ScrollView(activity);
         scroll.setFocusable(false);
