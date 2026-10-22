@@ -143,11 +143,10 @@ def patch_site_api() -> None:
 
 def patch_video() -> None:
     snip = """
-        // SHELL_JAR_SETTINGS_REDO
+        // SHELL_JAR_SETTINGS_REDO: open shell panel; finish after dialog dismiss (inside shell)
         try {
             if (com.fongmi.android.tv.ui.dialog.JarPanSettingsShell.isShellPanel(getId())) {
                 com.fongmi.android.tv.ui.dialog.JarPanSettingsShell.open(this, getKey(), getId());
-                try { finish(); } catch (Throwable ignored) {}
                 return;
             }
         } catch (Throwable ignored) {
