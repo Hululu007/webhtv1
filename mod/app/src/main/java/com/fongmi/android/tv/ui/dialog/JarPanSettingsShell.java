@@ -35,7 +35,7 @@ import java.util.List;
 import java.util.concurrent.Executors;
 
 /**
- * SHELL_JAR_SETTINGS_REDO v10
+ * SHELL_JAR_SETTINGS_REDO v11
  * 淡蓝背景 + 完整线路列表可滚动 + 下载线程需确认 + 账号登录壳子列表带高亮
  */
 public final class JarPanSettingsShell {
@@ -116,6 +116,156 @@ public final class JarPanSettingsShell {
         } else {
             openLineOrder(activity);
         }
+    }
+
+
+    /**
+     * TV 账号登录：不替换 jar 弹窗，仅在弹出后给可聚焦行加蓝框。
+     * 可重复调用；内部限次扫描 Window 列表。
+     */
+    public static void scheduleLoginFocusEnhance(Activity activity) {
+        if (activity == null || !isTelevision()) return;
+        android.os.Handler h = new android.os.Handler(android.os.Looper.getMainLooper());
+        final int[] step = {0};
+        Runnable tick = new Runnable() {
+            @Override
+            public void run() {
+                if (activity.isFinishing()) return;
+                boolean hit = tryEnhanceLoginDialogs(activity);
+                step[0]++;
+                // 约 3 秒内多次尝试，覆盖 jar 延迟 show
+                if (!hit && step[0] < 20) {
+                    h.postDelayed(this, 150);
+                } else if (hit && step[0] < 8) {
+                    // 命中后再补几次，防止 ListView 晚绑定
+                    h.postDelayed(this, 200);
+                }
+            }
+        };
+        h.postDelayed(tick, 200);
+    }
+
+    private static boolean tryEnhanceLoginDialogs(Activity activity) {
+        boolean any = false;
+        try {
+            Class<?> wmg = Class.forName("android.view.WindowManagerGlobal");
+            Object inst = wmg.getMethod("getInstance").invoke(null);
+            java.lang.reflect.Field f = wmg.getDeclaredField("mViews");
+            f.setAccessible(true);
+            Object views = f.get(inst);
+            if (!(views instanceof java.util.List)) return false;
+            java.util.List<?> list = (java.util.List<?>) views;
+            for (Object o : list) {
+                if (!(o instanceof View)) continue;
+                View root = (View) o;
+                if (root.getVisibility() != View.VISIBLE) continue;
+                if (!looksLikeLoginDialog(root)) continue;
+                if (enhanceTree(root)) any = true;
+            }
+        } catch (Throwable ignored) {
+        }
+        // 回退：当前焦点所在树
+        try {
+            View focus = activity.getCurrentFocus();
+            if (focus != null) {
+                View root = focus.getRootView();
+                if (looksLikeLoginDialog(root) && enhanceTree(root)) any = true;
+            }
+        } catch (Throwable ignored) {
+        }
+        return any;
+    }
+
+    private static boolean looksLikeLoginDialog(View root) {
+        try {
+            StringBuilder sb = new StringBuilder();
+            collectText(root, sb, 0);
+            String all = sb.toString();
+            if (all.contains("选择账号") || all.contains("导入项目") || all.contains("账号登录")
+                    || all.contains("上下键移动") || all.contains("OK选择") || all.contains("OK 选择")) {
+                return true;
+            }
+            // 次要：含「夸克/百度」且像设置列表的弹层
+            if ((all.contains("夸克") || all.contains("网盘")) && all.contains("登录")) return true;
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
+    private static void collectText(View v, StringBuilder sb, int depth) {
+        if (v == null || depth > 18) return;
+        if (v instanceof TextView) {
+            CharSequence cs = ((TextView) v).getText();
+            if (cs != null) sb.append(cs).append(' ');
+        }
+        if (v instanceof ViewGroup) {
+            ViewGroup g = (ViewGroup) v;
+            int n = g.getChildCount();
+            for (int i = 0; i < n; i++) collectText(g.getChildAt(i), sb, depth + 1);
+        }
+    }
+
+    private static boolean enhanceTree(View root) {
+        boolean changed = false;
+        try {
+            if (root instanceof android.widget.ListView) {
+                android.widget.ListView lv = (android.widget.ListView) root;
+                lv.setItemsCanFocus(true);
+                lv.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
+                changed = true;
+            }
+            if (root instanceof ViewGroup) {
+                ViewGroup g = (ViewGroup) root;
+                // ScrollView 不抢焦
+                if (root instanceof ScrollView) {
+                    root.setFocusable(false);
+                    g.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
+                }
+                for (int i = 0; i < g.getChildCount(); i++) {
+                    if (enhanceTree(g.getChildAt(i))) changed = true;
+                }
+            }
+            // 可点击行 / 较大 TextView 行
+            boolean rowLike = root.isClickable() || root.isFocusable()
+                    || (root instanceof TextView && ((TextView) root).getText() != null
+                    && ((TextView) root).getText().length() > 0 && root.getHeight() > 0);
+            if (rowLike && !(root instanceof android.widget.Button)
+                    && !(root instanceof android.widget.EditText)) {
+                if (!root.isFocusable()) {
+                    root.setFocusable(true);
+                    root.setFocusableInTouchMode(true);
+                    changed = true;
+                }
+                Object tag = root.getTag(0x20F0C05);
+                if (tag == null) {
+                    root.setTag(0x20F0C05, Boolean.TRUE);
+                    final android.graphics.drawable.Drawable oldBg = root.getBackground();
+                    root.setOnFocusChangeListener((v, has) -> {
+                        try {
+                            if (has) {
+                                android.graphics.drawable.GradientDrawable g =
+                                        new android.graphics.drawable.GradientDrawable();
+                                g.setCornerRadius(dp(v, 8));
+                                g.setColor(0xFFBBDEFB);
+                                g.setStroke(dp(v, 3), 0xFF1976D2);
+                                v.setBackground(g);
+                            } else {
+                                if (oldBg != null) v.setBackground(oldBg);
+                                else v.setBackgroundColor(0x00000000);
+                            }
+                        } catch (Throwable ignored) {
+                        }
+                    });
+                    changed = true;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return changed;
+    }
+
+    private static int dp(View v, int d) {
+        return Math.round(d * v.getResources().getDisplayMetrics().density);
     }
 
     public static void openPost(String siteKey, String id) {

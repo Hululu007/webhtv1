@@ -99,6 +99,19 @@ def patch_site_api() -> None:
                 com.fongmi.android.tv.ui.dialog.JarPanSettingsShell.openPost(key, id);
                 return com.fongmi.android.tv.bean.Result.empty();
             }
+            try {
+                if (id != null) {
+                    String _ls = id.toLowerCase();
+                    if (_ls.contains("panlogin") || _ls.contains("login")) {
+                        android.app.Activity _la = null;
+                        try { _la = com.fongmi.android.tv.App.activity(); } catch (Throwable ignored) {}
+                        if (_la != null) {
+                            com.fongmi.android.tv.ui.dialog.JarPanSettingsShell.scheduleLoginFocusEnhance(_la);
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
         } catch (Throwable ignored) {
         }
 """
@@ -143,11 +156,22 @@ def patch_site_api() -> None:
 
 def patch_video() -> None:
     snip = """
-        // SHELL_JAR_SETTINGS_REDO: open shell panel; finish after dialog dismiss (inside shell)
+        // SHELL_JAR_SETTINGS_REDO: TV shell panels (line order / thread)
         try {
             if (com.fongmi.android.tv.ui.dialog.JarPanSettingsShell.isShellPanel(getId())) {
                 com.fongmi.android.tv.ui.dialog.JarPanSettingsShell.open(this, getKey(), getId());
                 return;
+            }
+        } catch (Throwable ignored) {
+        }
+        // TV 账号登录：不拦截 jar，只补蓝框高亮
+        try {
+            String _sid = getId();
+            if (_sid != null) {
+                String _s = _sid.toLowerCase();
+                if (_s.contains("panlogin") || _s.contains("login")) {
+                    com.fongmi.android.tv.ui.dialog.JarPanSettingsShell.scheduleLoginFocusEnhance(this);
+                }
             }
         } catch (Throwable ignored) {
         }
