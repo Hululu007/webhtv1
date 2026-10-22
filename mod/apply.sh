@@ -167,12 +167,13 @@ if [[ -f "$MOD/hooks/inject_push_tv_newintent.py" ]]; then
   python3 "$MOD/hooks/inject_push_tv_newintent.py" "$ROOT" || exit 1
 fi
 
-# JAR_DIALOG_FOCUS_FIX — TV 遥控器 + jar AlertDialog 焦点
-# 回退：删除本段或删除 hooks/inject_jar_dialog_focus.py 后重新构建
-if [[ -f "$MOD/hooks/inject_jar_dialog_focus.py" ]]; then
-  echo "[mod] inject_jar_dialog_focus"
-  python3 "$MOD/hooks/inject_jar_dialog_focus.py" "$ROOT" || exit 1
+# SHELL_JAR_SETTINGS_REDO — 综合设置「线路排序/下载线程」壳子原生 TV UI
+# 回退：删除 hooks/inject_jar_settings_shell.py 与 app/.../JarPanSettingsShell.java
+if [[ -f "$MOD/hooks/inject_jar_settings_shell.py" ]]; then
+  echo "[mod] inject_jar_settings_shell"
+  python3 "$MOD/hooks/inject_jar_settings_shell.py" "$ROOT" || exit 1
 fi
+
 if [[ -f "$MOD/hooks/inject_live_channel_zorder.py" ]]; then
   echo "[mod] inject_live_channel_zorder"
   python3 "$MOD/hooks/inject_live_channel_zorder.py" "$ROOT" || exit 1
