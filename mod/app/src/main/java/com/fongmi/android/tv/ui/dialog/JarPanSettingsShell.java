@@ -35,7 +35,7 @@ import java.util.List;
 import java.util.concurrent.Executors;
 
 /**
- * SHELL_JAR_SETTINGS_REDO v17
+ * SHELL_JAR_SETTINGS_REDO v18
  * 淡蓝背景 + 完整线路列表可滚动 + 下载线程需确认 + 账号登录壳子列表带高亮
  */
 public final class JarPanSettingsShell {
@@ -96,12 +96,18 @@ public final class JarPanSettingsShell {
         if (!isTelevision()) return false;
         String s = id == null ? "" : id.toLowerCase().trim();
         String n = name == null ? "" : name.trim();
+        // 综合设置里的「账号登录」列表入口：永远壳子，不受 bypass 影响
+        boolean loginHub = s.contains("panloginhub") || s.equals("panloginhubsettings")
+                || n.contains("账号登录") || n.contains("帐号登录");
+        if (loginHub) return true;
+        // bypass：仅放行「扫码/账密」等下级 action，避免再被壳子拦住
         if (android.os.SystemClock.uptimeMillis() < sBypassLoginUntil) {
-            if (s.contains("login") || n.contains("账号") || n.contains("帐号")) return false;
+            if (s.contains("login") || s.contains("scan") || s.contains("qr")
+                    || s.contains("扫码") || s.contains("cookie") || s.contains("password"))
+                return false;
         }
-        // 登录：id / 名 / 常见 key
-        if (s.contains("login") || s.contains("panlogin") || s.equals("panloginhubsettings")
-                || n.contains("账号登录") || n.contains("帐号登录") || n.equals("账号登录"))
+        if (s.contains("login") || s.contains("panlogin")
+                || n.contains("账号登录") || n.contains("帐号登录"))
             return true;
         if (s.contains("playlineorder") || s.contains("lineorder") || n.contains("线路排序"))
             return true;
@@ -725,7 +731,8 @@ public final class JarPanSettingsShell {
         // 与手机端 jar 常见档位对齐（含截图中的 10/12/16/32/64）
         List<String> opts = new ArrayList<>();
         if (item.allowAuto) opts.add("自动");
-        for (int n : new int[]{1, 2, 3, 4, 6, 8, 10, 12, 16, 24, 32, 48, 64, 96, 128}) {
+        // 与手机端常见档位对齐：16 / 32 / 64 为主，兼顾截图中的 10/12
+        for (int n : new int[]{8, 10, 12, 16, 32, 64, 128}) {
             opts.add(String.valueOf(n));
         }
 
@@ -1006,7 +1013,8 @@ public final class JarPanSettingsShell {
         }
     }
 
-    /** 二级：登录方式。返回可回到一级；确认后再关窗并调 jar */
+
+    /** 二级：登录方式。扫码/账密/APP 调 jar；失败则留在本页不关一级 */
     private static void openLoginMethods(Activity activity, String siteKey,
                                          String panKey, String panName, String shortName,
                                          AlertDialog parent) {
@@ -1015,7 +1023,12 @@ public final class JarPanSettingsShell {
         root.addView(title(activity, panName));
         root.addView(sub(activity, "选择登录方式 · 返回键回到网盘列表"));
 
-        final String[] methods = new String[]{"扫码登录", "账号密码 / Cookie", "返回网盘列表"};
+        final String[] methods = new String[]{
+                "扫码登录",
+                "账号密码 / Cookie",
+                "APP 跳转登录",
+                "返回网盘列表"
+        };
         final int[] sel = {0};
         final List<LinearLayout> rows = new ArrayList<>();
         final AlertDialog[] dlg = new AlertDialog[1];
@@ -1025,8 +1038,8 @@ public final class JarPanSettingsShell {
             for (int i = 0; i < rows.size(); i++) {
                 applyRowFocus(activity, rows.get(i), i == sel[0]);
                 if (rows.get(i).getChildCount() > 0 && rows.get(i).getChildAt(0) instanceof TextView) {
-                    String m = methods[i];
-                    ((TextView) rows.get(i).getChildAt(0)).setText((i == sel[0] ? "▶  " : "    ") + m);
+                    ((TextView) rows.get(i).getChildAt(0))
+                            .setText((i == sel[0] ? "▶  " : "    ") + methods[i]);
                 }
             }
         };
@@ -1042,17 +1055,23 @@ public final class JarPanSettingsShell {
                 }
             });
             row.setOnClickListener(v -> {
-                if (idx == 2) {
-                    // 返回一级
+                if (idx == 3) {
                     if (dlg[0] != null) dlg[0].dismiss();
                     return;
                 }
-                sBypassLoginUntil = android.os.SystemClock.uptimeMillis() + 12000;
-                if (dlg[0] != null) dlg[0].dismiss();
-                if (parent != null && parent.isShowing()) parent.dismiss();
-                sOpening = false;
-                final int mode = idx; // 0 scan 1 password
-                h.post(() -> launchJarPanLogin(activity, siteKey, panKey, panName, shortName, mode));
+                final int mode = idx; // 0 scan 1 password 2 app
+                // 先调 jar，成功再关二级；绝不回退打开无蓝框的 jar 账号列表
+                h.post(() -> {
+                    boolean ok = launchJarPanLogin(activity, siteKey, panKey, panName, shortName, mode);
+                    if (ok) {
+                        sBypassLoginUntil = android.os.SystemClock.uptimeMillis() + 15000;
+                        if (dlg[0] != null) dlg[0].dismiss();
+                        // 一级可留着或关：关一级避免叠层
+                        if (parent != null && parent.isShowing()) parent.dismiss();
+                        sOpening = false;
+                    }
+                    // 失败：二级仍在，用户可返回或重试
+                });
             });
             row.setOnKeyListener((v, keyCode, event) -> {
                 if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
@@ -1091,7 +1110,6 @@ public final class JarPanSettingsShell {
             paint[0].run();
             if (!rows.isEmpty()) rows.get(0).requestFocus();
         });
-        // 不 finish Activity
         dialog.setOnKeyListener((d, keyCode, event) -> {
             if (keyCode == KeyEvent.KEYCODE_BACK && event.getAction() == KeyEvent.ACTION_UP) {
                 dialog.dismiss();
@@ -1106,10 +1124,10 @@ public final class JarPanSettingsShell {
         }
     }
 
-
-    private static void launchJarPanLogin(Activity activity, String siteKey, String panKey,
-                                          String panName, String shortName, int mode) {
-        if (TextUtils.isEmpty(siteKey)) return;
+    /** @return true 若 action 有非空响应（尽力判断） */
+    private static boolean launchJarPanLogin(Activity activity, String siteKey, String panKey,
+                                            String panName, String shortName, int mode) {
+        if (TextUtils.isEmpty(siteKey)) return false;
         java.util.ArrayList<String> acts = new java.util.ArrayList<>();
         if (mode == 0) {
             acts.add("扫码登录" + shortName);
@@ -1117,28 +1135,39 @@ public final class JarPanSettingsShell {
             acts.add("扫码登录" + panName);
             acts.add("scan:" + panKey);
             acts.add("qrlogin:" + panKey);
-        } else {
+        } else if (mode == 1) {
             acts.add("账号密码登录");
             acts.add(shortName + "账号密码");
             acts.add("password:" + panKey);
             acts.add("cookie:" + panKey);
+            acts.add("账密登录" + shortName);
+        } else {
+            acts.add("APP跳转登录" + shortName);
+            acts.add("APP登录" + shortName);
+            acts.add("打开" + shortName);
+            acts.add("app:" + panKey);
+            acts.add("openApp:" + panKey);
+            acts.add(shortName + "APP登录");
         }
-        acts.add(panKey);
-        acts.add(panName);
         acts.add("login:" + panKey);
         acts.add("panLogin:" + panKey);
+        acts.add(panKey);
         for (String act : acts) {
             try {
+                // bypass 仅对非 hub 的 action
+                sBypassLoginUntil = android.os.SystemClock.uptimeMillis() + 15000;
                 Result r = SiteApi.action(siteKey, act);
-                if (r != null) return;
+                if (r != null) {
+                    // 不把 panLoginHubSettings 当成功
+                    return true;
+                }
             } catch (Throwable ignored) {
             }
         }
-        try {
-            SiteApi.action(siteKey, "panLoginHubSettings");
-        } catch (Throwable ignored) {
-        }
+        // 禁止 fallback 到 panLoginHubSettings（会弹出无蓝框 jar 列表）
+        return false;
     }
+
 
 
     private static void trySelectAccount(String siteKey, String name) {
