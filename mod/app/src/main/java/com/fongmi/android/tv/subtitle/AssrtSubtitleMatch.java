@@ -76,6 +76,16 @@ public final class AssrtSubtitleMatch {
     /** 内封字幕：语言 / 在 TEXT 轨中的序号（-1 未知） */
     private static volatile String sPendingSelectLang = "";
     private static volatile int sPendingSelectIndex = -1;
+    private static volatile long sPreferChineseSettleAt = 0L;
+    /** 用户/历史已选定内封后，在此时间前禁止 preferChinese 抢轨 */
+    private static volatile long sUserEmbeddedStickyUntil = 0L;
+    private static volatile String sStickyEmbeddedName = "";
+    /** 用户选过的内封字幕偏好（跨集记住类型）：ass / srt / pgs / "" */
+    private static volatile String sEmbeddedPreferFormat = "";
+    /** 用户选过的内封语言偏好：simp / trad / zh / "" */
+    private static volatile String sEmbeddedPreferLang = "";
+    private static final String PREF_EMB_FMT = "subtitle_embed_prefer_format";
+    private static final String PREF_EMB_LANG = "subtitle_embed_prefer_lang";
 
     private AssrtSubtitleMatch() {
     }
@@ -182,7 +192,7 @@ public final class AssrtSubtitleMatch {
                         }
                     });
                 } catch (Throwable e) {
-                    Log.w(TAG, "bg remember/rename: " + e.getMessage());
+                    com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "bg remember/rename: " + e.getMessage());
                     try { rememberSub(hist, epis, srcFile, displayF, langF, formatF); } catch (Throwable ignored) {}
                 }
             });
@@ -270,7 +280,7 @@ public final class AssrtSubtitleMatch {
             com.fongmi.android.tv.player.exo.ExoUtil.reapplySubtitleStyle();
         } catch (Throwable ignored) {
         }
-        Log.i(TAG, "notifySubtitleStyleChanged font prepared + exo reapply");
+        /* log silenced */
     }
 
 
@@ -324,7 +334,7 @@ public final class AssrtSubtitleMatch {
                 if (setProp != null) break;
             }
             if (setProp == null) {
-                Log.w(TAG, "applyMpvSubtitleStyle: no setProperty");
+                com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "applyMpvSubtitleStyle: no setProperty");
                 return;
             }
             String style = com.fongmi.android.tv.player.mpv.MpvSubtitleStylePolicy.getAssForceStyle();
@@ -351,9 +361,9 @@ public final class AssrtSubtitleMatch {
                     setProp.invoke(invokeOn, "osd-fonts-dir", fontsDir);
                 }
             } catch (Throwable ignoredDir) {}
-            Log.i(TAG, "applyMpvSubtitleStyle ok color=" + color + " font=" + font + " dir=" + fontsDir);
+            /* log silenced */
         } catch (Throwable e) {
-            Log.w(TAG, "applyMpvSubtitleStyle: " + e.getMessage());
+            com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "applyMpvSubtitleStyle: " + e.getMessage());
         }
     }
 
@@ -593,13 +603,13 @@ public final class AssrtSubtitleMatch {
                 }
             }
             if (bestGroup == null || bestIndex < 0 || bestScore < 25) {
-                Log.i(TAG, "forceSelect skip score=" + bestScore + " wantExt=" + wantExternal + " name=" + remembered);
+                /* log silenced */
                 return false;
             }
             // 已是目标轨则不重复 set
             try {
                 if (bestGroup.isTrackSelected(bestIndex)) {
-                    Log.i(TAG, "forceSelect already selected");
+                    /* log silenced */
                     sForceSettled = true;
                     sLastForceOkAt = System.currentTimeMillis();
                     return true;
@@ -617,12 +627,12 @@ public final class AssrtSubtitleMatch {
             Format chosen = bestGroup.getTrackFormat(bestIndex);
             String label = chosen.label != null ? chosen.label : String.valueOf(chosen.id);
             persistTextTrackSelection(player, !TextUtils.isEmpty(remembered) ? remembered : label, chosen.sampleMimeType);
-            Log.i(TAG, "forceSelect OK score=" + bestScore + " label=" + label + " mime=" + chosen.sampleMimeType);
+            /* log silenced */
             sForceSettled = true;
             sLastForceOkAt = System.currentTimeMillis();
             return true;
         } catch (Throwable e) {
-            Log.w(TAG, "forceSelect failed: " + e.getMessage());
+            com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "forceSelect failed: " + e.getMessage());
             return false;
         }
     }
@@ -722,13 +732,13 @@ public final class AssrtSubtitleMatch {
                     list.add(track);
                     player.setTrack(list);
                     ok = true;
-                    Log.i(TAG, "selectExternal score=" + bestScore + " name=" + nm + " mime=" + mime);
+                    /* log silenced */
                 } catch (Throwable ignored) {
                 }
             }
             return ok;
         } catch (Throwable e) {
-            Log.w(TAG, "selectExternal failed: " + e.getMessage());
+            com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "selectExternal failed: " + e.getMessage());
             return false;
         }
     }
@@ -765,7 +775,7 @@ public final class AssrtSubtitleMatch {
 
 
 
-    /** 用户点选：仅外挂需要记忆；内封不再记忆（起播统一优先中文） */
+    /** 用户点选：外挂与内封均记忆；历史进入优先恢复上次选择 */
     public static void rememberChosenTrack(PlayerManager player, Track item) {
         try {
             if (item == null || item.getType() != C.TRACK_TYPE_TEXT) return;
@@ -791,9 +801,44 @@ public final class AssrtSubtitleMatch {
                     || nl.contains(".srt") || nl.contains(".ass") || nl.contains(".ssa") || nl.contains(".vtt")
                     || looksLikeHashFileName(name);
             if (!external) {
-                // 内封：不记忆
+                // 内封：记住本次选择，历史记录再次进入时可恢复（并保留简繁/格式偏好加权）
                 sPreferExternal = false;
-                Log.i(TAG, "rememberChosenTrack embedded skip memory name=" + name);
+                String embFmt = detectSubFormat(name, fmt);
+                String embLang = detectSubLang(name, item.getName());
+                if (TextUtils.isEmpty(embLang) || "zh".equals(embLang)) {
+                    embLang = detectSubLang(name, "");
+                }
+                saveEmbeddedPrefs(embFmt, embLang);
+                sPendingSelectName = name;
+                sPendingSelectFormat = item.getFormat() == null ? "" : item.getFormat();
+                sPendingSelectLang = embLang == null ? "" : embLang;
+                sForceSettled = false;
+                try {
+                    if (player != null && !TextUtils.isEmpty(player.getKey())) {
+                        Track tr = new Track(C.TRACK_TYPE_TEXT, name,
+                                item.getFormat() == null ? "" : item.getFormat());
+                        tr.setKey(player.getKey());
+                        tr.setSelected(true);
+                        try {
+                            if (item.getPlayerId() != null) tr.setPlayerId(item.getPlayerId());
+                        } catch (Throwable ignored) {
+                        }
+                        tr.save();
+                    }
+                } catch (Throwable ignored) {
+                }
+                markEmbeddedSticky(name);
+                try {
+                    if (sLastHistory != null) {
+                        for (String key : subCacheKeys(sLastHistory, sLastEpisode)) {
+                            putCommit(key + "_kind", "embedded");
+                            putCommit(key + "_name", name);
+                            putCommit(key + "_lang", embLang == null ? "" : embLang);
+                            putCommit(key + "_fmt", embFmt == null ? "" : embFmt);
+                        }
+                    }
+                } catch (Throwable ignored) {
+                }
                 return;
             }
             sPendingSelectName = name;
@@ -820,9 +865,9 @@ public final class AssrtSubtitleMatch {
             } catch (Throwable ignored) {
             }
             persistChosenNameOnly(name, item.getFormat() == null ? "" : item.getFormat());
-            Log.i(TAG, "rememberChosenTrack external name=" + name);
+            
         } catch (Throwable e) {
-            Log.w(TAG, "rememberChosenTrack: " + e.getMessage());
+            com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "rememberChosenTrack: " + e.getMessage());
         }
     }
 
@@ -868,7 +913,7 @@ public final class AssrtSubtitleMatch {
                 if (sForceSettled && System.currentTimeMillis() - sLastForceOkAt < 3000) {
                     if (forceSelectExternalViaMedia3(player)) return;
                 }
-                Log.i(TAG, "onTracksReady preferExt name=" + sPendingSelectName + " hasFile=" + hasExtFile);
+                /* log silenced */
                 persistAndSelectText(player, sPendingSelectName, sPendingSelectFormat);
                 final PlayerManager pm = player;
                 final String nm = sPendingSelectName;
@@ -880,9 +925,9 @@ public final class AssrtSubtitleMatch {
             // 无外挂记忆：延迟一次选中文内封
             sPreferExternal = false;
             final PlayerManager pm = player;
-            App.post(() -> preferChineseEmbedded(pm), 5000);
+            schedulePreferChinese(pm);
         } catch (Throwable e) {
-            Log.w(TAG, "onTracksReady: " + e.getMessage());
+            com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "onTracksReady: " + e.getMessage());
         }
     }
 
@@ -929,7 +974,7 @@ public final class AssrtSubtitleMatch {
                 try {
                     if (loadCachedSubPayload(history != null ? history : sLastHistory, episode != null ? episode : sLastEpisode) == null) {
                         final PlayerManager pmE = player;
-                        App.post(() -> preferChineseEmbedded(pmE), 5000);
+                        schedulePreferChinese(pmE);
                     }
                 } catch (Throwable ignoredEmb) {
                 }
@@ -1032,14 +1077,14 @@ public final class AssrtSubtitleMatch {
             }
             List<Item> items = new ArrayList<>(map.values());
             if (items.isEmpty()) {
-                Log.i(TAG, "auto match empty keyword=" + keyword);
+                /* log silenced */
                 return;
             }
             if (gen != GEN.get()) return;
             Item hit = pickBest(items);
             File file = downloadItem(hit);
             if (file == null || !file.isFile()) {
-                Log.w(TAG, "auto resolve failed " + hit.label());
+                com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "auto resolve failed " + hit.label());
                 return;
             }
             if (gen != GEN.get()) return;
@@ -1054,10 +1099,10 @@ public final class AssrtSubtitleMatch {
                 if (TextUtils.isEmpty(format)) format = com.fongmi.android.tv.player.PlayerHelper.getSubtitleMimeType(subFile.getName());
                 applyToPlayer(player, subFile, display, applied.lang, format);
                 Notify.show(activity.getString(R.string.subtitle_auto_match_hit, display));
-                Log.i(TAG, "auto applied " + display + " src=" + applied.label());
+                /* log silenced */
             });
         } catch (Exception e) {
-            Log.w(TAG, "auto match failed: " + e.getMessage());
+            com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "auto match failed: " + e.getMessage());
         }
     }
 
@@ -1166,9 +1211,9 @@ public final class AssrtSubtitleMatch {
                     com.fongmi.android.tv.playback.SubtitleRestoreCoordinator.remember(history, sub);
                 }
             } catch (Throwable ignored) {}
-            Log.i(TAG, "remember sub keys=" + subCacheKeys(history, episode).size() + " file=" + durable.getAbsolutePath() + " name=" + name);
+            /* log silenced */
         } catch (Throwable e) {
-            Log.w(TAG, "rememberSub failed: " + e.getMessage());
+            com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "rememberSub failed: " + e.getMessage());
         }
     }
 
@@ -1244,9 +1289,9 @@ public final class AssrtSubtitleMatch {
             }
             sPendingSelectName = name;
             sPendingSelectFormat = format;
-            Log.i(TAG, "attachRememberedSub " + name);
+            /* log silenced */
         } catch (Throwable e) {
-            Log.w(TAG, "attachRememberedSub failed: " + e.getMessage());
+            com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "attachRememberedSub failed: " + e.getMessage());
         }
     }
 
@@ -1275,9 +1320,9 @@ public final class AssrtSubtitleMatch {
                             }
                         }
                     }
-                    Log.i(TAG, "reapplyAfterPlayerChange tick prefer=" + sPreferExternal + " pending=" + sPendingSelectName);
+                    /* log silenced */
                 } catch (Throwable e) {
-                    Log.w(TAG, "reapply tick: " + e.getMessage());
+                    com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "reapply tick: " + e.getMessage());
                 }
             };
             once.run();
@@ -1285,7 +1330,7 @@ public final class AssrtSubtitleMatch {
             App.post(once, 1200);
             App.post(once, 2800);
         } catch (Throwable e) {
-            Log.w(TAG, "reapplyAfterPlayerChange: " + e.getMessage());
+            com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "reapplyAfterPlayerChange: " + e.getMessage());
         }
     }
 
@@ -1300,14 +1345,14 @@ public final class AssrtSubtitleMatch {
                 }
             }
             if (TextUtils.isEmpty(raw)) {
-                Log.i(TAG, "restore miss no cache");
+                // restore miss silenced
                 return false;
             }
             String[] parts = raw.split("\u0001", -1);
             if (parts.length < 1 || TextUtils.isEmpty(parts[0])) return false;
             File file = new File(parts[0]);
             if (!file.isFile()) {
-                Log.w(TAG, "restore miss file gone " + parts[0]);
+                com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "restore miss file gone " + parts[0]);
                 return false;
             }
             String name = parts.length > 1 ? parts[1] : file.getName();
@@ -1341,10 +1386,10 @@ public final class AssrtSubtitleMatch {
                 } catch (Throwable ignored) {
                 }
             }, 2800);
-            Log.i(TAG, "restored sub " + name + " path=" + file.getAbsolutePath());
+            /* log silenced */
             return true;
         } catch (Throwable e) {
-            Log.w(TAG, "restore sub failed: " + e.getMessage());
+            com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "restore sub failed: " + e.getMessage());
             return false;
         }
     }
@@ -1388,7 +1433,7 @@ public final class AssrtSubtitleMatch {
         }
         List<Item> all = new ArrayList<>(map.values());
         all.sort((a, b) -> Integer.compare(score(b), score(a)));
-        Log.i(TAG, "searchList q=" + query + " count=" + all.size());
+        /* log silenced */
         return all;
     }
 
@@ -1423,12 +1468,12 @@ public final class AssrtSubtitleMatch {
         try {
             items.addAll(searchAssrt(query));
         } catch (Exception e) {
-            Log.w(TAG, "assrt search err q=" + query + " " + e.getMessage());
+            com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "assrt search err q=" + query + " " + e.getMessage());
         }
         try {
             items.addAll(searchXunlei(query));
         } catch (Exception e) {
-            Log.w(TAG, "xunlei search err q=" + query + " " + e.getMessage());
+            com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "xunlei search err q=" + query + " " + e.getMessage());
         }
         return items;
     }
@@ -1437,13 +1482,13 @@ public final class AssrtSubtitleMatch {
         List<Item> items = new ArrayList<>();
         String token = Setting.getSubtitleAssrtToken();
         if (TextUtils.isEmpty(token)) {
-            Log.i(TAG, "assrt skip empty token");
+            /* log silenced */
             return items;
         }
         // 先 is_file=1（与 Silent 一致），空结果再放宽一次
         items.addAll(searchAssrtOnce(query, token, true));
         if (items.isEmpty()) items.addAll(searchAssrtOnce(query, token, false));
-        Log.i(TAG, "assrt total candidates=" + items.size() + " q=" + query);
+        /* log silenced */
         return items;
     }
 
@@ -1451,20 +1496,20 @@ public final class AssrtSubtitleMatch {
         List<Item> items = new ArrayList<>();
         String url = ASSRT_API + "/sub/search?token=" + enc(token) + "&q=" + enc(query) + "&cnt=20";
         if (isFile) url += "&is_file=1";
-        Log.i(TAG, "assrt search q=" + query + " is_file=" + isFile);
+        /* log silenced */
         try (Response response = OkHttp.client().newCall(new Request.Builder().url(url)
                 .header("User-Agent", UA)
                 .header("Referer", "https://assrt.net/")
                 .get().build()).execute()) {
             if (!response.isSuccessful() || response.body() == null) {
-                Log.w(TAG, "assrt http " + response.code());
+                com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "assrt http " + response.code());
                 return items;
             }
             String body = response.body().string();
             JsonObject root = JsonParser.parseString(body).getAsJsonObject();
             int status = asInt(root, "status", Integer.MIN_VALUE);
             if (status != Integer.MIN_VALUE && status != 0) {
-                Log.w(TAG, "assrt status=" + status + " body=" + body.substring(0, Math.min(200, body.length())));
+                com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "assrt status=" + status + " body=" + body.substring(0, Math.min(200, body.length())));
                 return items;
             }
             JsonArray subs = asArray(asObject(root, "sub"), "subs");
@@ -1488,18 +1533,18 @@ public final class AssrtSubtitleMatch {
     private static List<Item> searchXunlei(String query) throws Exception {
         List<Item> items = new ArrayList<>();
         String url = XUNLEI_API + enc(query);
-        Log.i(TAG, "xunlei search q=" + query);
+        /* log silenced */
         Request request = new Request.Builder().url(url).header("User-Agent", UA).header("Referer", "https://sl-m-ssl.xunlei.com/").header("Connection", "close").get().build();
         try (Response response = OkHttp.client().newCall(request).execute()) {
             if (!response.isSuccessful() || response.body() == null) {
-                Log.w(TAG, "xunlei http " + response.code());
+                com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "xunlei http " + response.code());
                 return items;
             }
             String body = response.body().string();
             JsonObject root = JsonParser.parseString(body).getAsJsonObject();
             int code = asInt(root, "code", 0);
             if (code != 0) {
-                Log.w(TAG, "xunlei code=" + code);
+                com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "xunlei code=" + code);
                 return items;
             }
             String result = first(root, "result");
@@ -1527,7 +1572,7 @@ public final class AssrtSubtitleMatch {
                 }
                 items.add(new Item("xunlei", id, name, lang, dl));
             }
-            Log.i(TAG, "xunlei candidates=" + items.size());
+            /* log silenced */
         }
         return items;
     }
@@ -1772,7 +1817,7 @@ public final class AssrtSubtitleMatch {
                 }
                 if (parts.length >= 2 && !TextUtils.isEmpty(parts[1])) sPendingSelectName = parts[1];
                 if (parts.length >= 3) sPendingSelectLang = parts[2] == null ? "" : parts[2];
-                Log.i(TAG, "loadEmbeddedMemory key=" + key + " name=" + sPendingSelectName + " idx=" + sPendingSelectIndex);
+                /* log silenced */
                 return;
             }
         } catch (Throwable ignored) {
@@ -1784,39 +1829,232 @@ public final class AssrtSubtitleMatch {
     /**
      * 无外挂记忆时：内封 TEXT 轨优先中文（zh/chi/中文/简体）。
      */
+    
+    private static void loadEmbeddedPrefs() {
+        try {
+            if (sEmbeddedPreferFormat == null) sEmbeddedPreferFormat = "";
+            if (sEmbeddedPreferLang == null) sEmbeddedPreferLang = "";
+            if (sEmbeddedPreferFormat.isEmpty()) {
+                String f = Prefers.getString(PREF_EMB_FMT, "");
+                if (f != null) sEmbeddedPreferFormat = f;
+            }
+            if (sEmbeddedPreferLang.isEmpty()) {
+                String l = Prefers.getString(PREF_EMB_LANG, "");
+                if (l != null) sEmbeddedPreferLang = l;
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static void saveEmbeddedPrefs(String format, String lang) {
+        try {
+            if (format != null) {
+                sEmbeddedPreferFormat = format;
+                Prefers.put(PREF_EMB_FMT, format);
+            }
+            if (lang != null) {
+                sEmbeddedPreferLang = lang;
+                Prefers.put(PREF_EMB_LANG, lang);
+            }
+            
+        } catch (Throwable e) {
+            com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "saveEmbeddedPrefs: " + e.getMessage());
+        }
+    }
+
+    /** 从 label/mime 推断格式：ass / srt / pgs / other */
+    private static String detectSubFormat(String label, String mime) {
+        String blob = ((label == null ? "" : label) + " " + (mime == null ? "" : mime)).toLowerCase(Locale.ROOT);
+        if (blob.contains("ssa") || blob.contains("ass") || blob.contains("text/x-ssa") || blob.contains("text/x-ass"))
+            return "ass";
+        if (blob.contains("pgs") || blob.contains("hdmv") || blob.contains("vobsub") || blob.contains("dvb")
+                || blob.contains("application/pgs") || blob.contains("application/vobsub"))
+            return "pgs";
+        if (blob.contains("subrip") || blob.contains("srt") || blob.contains("vtt") || blob.contains("ttml")
+                || blob.contains("text/"))
+            return "srt";
+        return "other";
+    }
+
+    private static String detectSubLang(String label, String lang) {
+        String blob = ((label == null ? "" : label) + " " + (lang == null ? "" : lang)).toLowerCase(Locale.ROOT);
+        boolean isTrad = blob.contains("繁体") || blob.contains("繁中") || blob.contains("traditional")
+                || blob.contains("cht") || blob.contains("hant") || blob.contains("zh-hant") || blob.contains("zh_hant");
+        boolean isSimp = blob.contains("简体") || blob.contains("简中") || blob.contains("simplified")
+                || blob.contains("chs") || blob.contains("hans") || blob.contains("zh-hans") || blob.contains("zh_hans");
+        if (isSimp && !isTrad) return "simp";
+        if (isTrad && !isSimp) return "trad";
+        if (blob.contains("中文") || blob.contains("chinese") || blob.startsWith("zh")
+                || "zh".equalsIgnoreCase(lang) || (lang != null && lang.toLowerCase(Locale.ROOT).startsWith("zh")))
+            return "zh";
+        return "";
+    }
+
+    private static int scoreEmbeddedTrack(Format f) {
+        String label = f.label != null ? f.label : "";
+        String lang = f.language != null ? f.language : "";
+        String mime = f.sampleMimeType == null ? "" : f.sampleMimeType;
+        String blob = (label + " " + lang).toLowerCase(Locale.ROOT);
+        if (blob.contains("外挂") || blob.contains("external")) return -1;
+
+        String langKind = detectSubLang(label, lang);
+        String fmt = detectSubFormat(label, mime);
+        int score = 0;
+        if ("simp".equals(langKind)) score += 100;
+        else if ("zh".equals(langKind)) score += 90;
+        else if ("trad".equals(langKind)) score += 70;
+        else return -1;
+
+        // 格式：ASS 优先于文本，文本优先于 PGS
+        if ("ass".equals(fmt)) score += 50;
+        else if ("srt".equals(fmt)) score += 15;
+        else if ("pgs".equals(fmt)) score -= 15;
+        else score += 5;
+
+        // 用户跨集偏好加权（手工选过后下一集沿用类型）
+        loadEmbeddedPrefs();
+        if (!TextUtils.isEmpty(sEmbeddedPreferFormat) && sEmbeddedPreferFormat.equals(fmt)) score += 35;
+        if (!TextUtils.isEmpty(sEmbeddedPreferLang)) {
+            if (sEmbeddedPreferLang.equals(langKind)) score += 25;
+            else if ("simp".equals(sEmbeddedPreferLang) && "trad".equals(langKind)) score -= 20;
+        }
+        return score;
+    }
+
+
+
+        /**
+     * PlayerManager.getPlayer() 可能为 null（tracks 在 engine 上），
+     * R8 后 field 名会变，故扫描所有字段找 engine.getPlayer()。
+     */
+    private static androidx.media3.common.Player resolveMedia3Player(PlayerManager player) {
+        if (player == null) return null;
+        // 1) 公开 getPlayer()
+        try {
+            Object o = player.getClass().getMethod("getPlayer").invoke(player);
+            if (o instanceof androidx.media3.common.Player) {
+                return (androidx.media3.common.Player) o;
+            }
+        } catch (Throwable ignored) {
+        }
+        // 2) 任意字段上的 getPlayer()（兼容 R8 混淆的 engine 字段名）
+        try {
+            for (java.lang.reflect.Field f : player.getClass().getDeclaredFields()) {
+                try {
+                    f.setAccessible(true);
+                    Object eng = f.get(player);
+                    if (eng == null) continue;
+                    if (eng instanceof androidx.media3.common.Player) {
+                        return (androidx.media3.common.Player) eng;
+                    }
+                    for (String mName : new String[]{"getPlayer", "getExoPlayer"}) {
+                        try {
+                            java.lang.reflect.Method mth = eng.getClass().getMethod(mName);
+                            Object exo = mth.invoke(eng);
+                            if (exo instanceof androidx.media3.common.Player) {
+                                return (androidx.media3.common.Player) exo;
+                            }
+                        } catch (Throwable ignored) {
+                        }
+                    }
+                    // 字段里再挖一层 player
+                    for (java.lang.reflect.Field f2 : eng.getClass().getDeclaredFields()) {
+                        try {
+                            f2.setAccessible(true);
+                            Object p2 = f2.get(eng);
+                            if (p2 instanceof androidx.media3.common.Player) {
+                                return (androidx.media3.common.Player) p2;
+                            }
+                        } catch (Throwable ignored) {
+                        }
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+        } catch (Throwable e) {
+            com.fongmi.android.tv.utils.ModDebugLog.w("SubtitleMatch", "resolveMedia3Player scan: " + e.getMessage());
+        }
+        return null;
+    }
+
+
+    
+    private static void markEmbeddedSticky(String name) {
+        sStickyEmbeddedName = name == null ? "" : name;
+        sUserEmbeddedStickyUntil = System.currentTimeMillis() + 3_000L;
+        sPreferChineseSettleAt = sUserEmbeddedStickyUntil;
+    }
+
+    
+    /** 起播后多次静默尝试选简体，避免轨晚到或被其它逻辑覆盖 */
+    private static void schedulePreferChinese(PlayerManager player) {
+        if (player == null) return;
+        final PlayerManager pm = player;
+        long[] delays = new long[]{0L, 400L, 1200L, 3000L, 8000L};
+        for (long d : delays) {
+            App.post(() -> {
+                try {
+                    preferChineseEmbedded(pm);
+                } catch (Throwable ignored) {
+                }
+            }, d);
+        }
+    }
+
     private static boolean preferChineseEmbedded(PlayerManager player) {
         try {
-            if (player == null || player.isEmpty()) return false;
+            if (player == null) return false;
+            try {
+                if (player.isEmpty()) return false;
+            } catch (Throwable ignored) {
+                return false;
+            }
             if (sPreferExternal) return false;
+            // 用户/历史已选内封：保护窗口内绝不自动抢轨
+            // 不再用长粘性锁死错误轨；仅短 settle 防抖
+            // 历史恢复可先跑，但不 return：后面仍按分数升级到简体/ASS
+            try {
+                tryRestoreEmbedded(player);
+            } catch (Throwable ignored) {
+            }
             if (loadCachedSubPayload(sLastHistory, sLastEpisode) != null) return false;
-            Tracks tracks = player.getCurrentTracks();
+            // 刚成功切轨后短时内不再反复切，避免 onTracks 风暴
+            // short settle: still allow upgrade to higher score (e.g. simp)
+            Tracks tracks;
+            try {
+                tracks = player.getCurrentTracks();
+            } catch (Throwable e) {
+                com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "preferChineseEmbedded getCurrentTracks: " + e.getMessage());
+                return false;
+            }
             if (tracks == null) return false;
+            loadEmbeddedPrefs();
+
             Tracks.Group bestGroup = null;
             int bestIndex = -1;
             int bestScore = -1;
             Format bestFmt = null;
+            int selectedScore = -1;
+            Tracks.Group selectedGroup = null;
+            int selectedIndex = -1;
+
             for (Tracks.Group group : tracks.getGroups()) {
                 if (group.getType() != C.TRACK_TYPE_TEXT) continue;
                 for (int i = 0; i < group.length; i++) {
                     if (!group.isTrackSupported(i)) continue;
                     Format f = group.getTrackFormat(i);
-                    String label = f.label != null ? f.label : "";
-                    String lang = f.language != null ? f.language : "";
-                    String blob = (label + " " + lang).toLowerCase(Locale.ROOT);
-                    String mime = f.sampleMimeType == null ? "" : f.sampleMimeType.toLowerCase(Locale.ROOT);
-                    if (blob.contains("外挂") || blob.contains("external") || blob.contains(".srt") || blob.contains(".ass")) {
-                        continue;
+                    int score = scoreEmbeddedTrack(f);
+                    if (score < 0) continue;
+                    boolean selected = false;
+                    try {
+                        selected = group.isTrackSelected(i);
+                    } catch (Throwable ignored) {
                     }
-                    int score = 0;
-                    if (blob.contains("简体") || blob.contains("simplified")) score += 100;
-                    else if (blob.contains("中文") || blob.contains("chinese")
-                            || lang.equalsIgnoreCase("zh") || lang.toLowerCase(Locale.ROOT).startsWith("zh")
-                            || lang.equalsIgnoreCase("chi"))
-                        score += 90;
-                    else if (blob.contains("繁体") || blob.contains("traditional") || blob.contains("cht"))
-                        score += 80;
-                    if (score <= 0) continue;
-                    if (mime.contains("pgs") || mime.contains("vobsub") || mime.contains("dvb")) score -= 5;
+                    if (selected) {
+                        selectedScore = score;
+                        selectedGroup = group;
+                        selectedIndex = i;
+                    }
                     if (score > bestScore) {
                         bestScore = score;
                         bestGroup = group;
@@ -1826,70 +2064,103 @@ public final class AssrtSubtitleMatch {
                 }
             }
             if (bestGroup == null || bestIndex < 0) {
-                Log.i(TAG, "preferChineseEmbedded none");
+                
                 return false;
-            }
-            try {
-                if (bestGroup.isTrackSelected(bestIndex)) {
-                    Log.i(TAG, "preferChineseEmbedded already selected");
-                    return true;
-                }
-            } catch (Throwable ignored) {
-            }
-            androidx.media3.common.Player pl = null;
-            try {
-                Object engine = player.getClass().getMethod("getPlayer").invoke(player);
-                if (engine instanceof androidx.media3.common.Player) pl = (androidx.media3.common.Player) engine;
-            } catch (Throwable ignored) {
-            }
-            if (pl == null) {
-                try {
-                    for (java.lang.reflect.Method m : player.getClass().getMethods()) {
-                        if (m.getParameterTypes().length != 0) continue;
-                        if (!androidx.media3.common.Player.class.isAssignableFrom(m.getReturnType())) continue;
-                        Object o = m.invoke(player);
-                        if (o instanceof androidx.media3.common.Player) {
-                            pl = (androidx.media3.common.Player) o;
-                            break;
-                        }
-                    }
-                } catch (Throwable ignored) {
-                }
             }
             String selLabel = bestFmt != null && bestFmt.label != null ? bestFmt.label : "中文";
             String selMime = bestFmt != null && bestFmt.sampleMimeType != null ? bestFmt.sampleMimeType : "";
+            // 已选且分数不低于最优 → 不动（避免反复 setTrack）
+                        if (selectedGroup == bestGroup && selectedIndex == bestIndex) {
+                
+                return true;
+            }
+            if (selectedScore >= bestScore && selectedScore > 0) {
+                
+                return true;
+            }
+            
+
+            // 与 forceSelectExternalViaMedia3 相同路径：engine 字段 → getPlayer/getExoPlayer
+            
+            androidx.media3.common.Player pl = resolveMedia3Player(player);
+            boolean applied = false;
             if (pl != null) {
                 try {
                     androidx.media3.common.TrackSelectionOverride override =
-                            new androidx.media3.common.TrackSelectionOverride(bestGroup.getMediaTrackGroup(), bestIndex);
-                    androidx.media3.common.TrackSelectionParameters params = pl.getTrackSelectionParameters()
-                            .buildUpon()
-                            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-                            .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-                            .setOverrideForType(override)
-                            .build();
-                    pl.setTrackSelectionParameters(params);
+                            new androidx.media3.common.TrackSelectionOverride(
+                                    bestGroup.getMediaTrackGroup(), bestIndex);
+                    androidx.media3.common.TrackSelectionParameters.Builder b =
+                            pl.getTrackSelectionParameters().buildUpon()
+                                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                                    .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                                    .setOverrideForType(override);
+                    // 尽量压语言偏好，减少被默认轨抢回
+                    try {
+                        if (bestFmt != null && bestFmt.language != null && !bestFmt.language.isEmpty()) {
+                            b.setPreferredTextLanguage(bestFmt.language);
+                        } else {
+                            b.setPreferredTextLanguage("zh");
+                        }
+                    } catch (Throwable ignored) {
+                    }
+                    pl.setTrackSelectionParameters(b.build());
+                    applied = true;
+                    
                 } catch (Throwable e) {
-                    Log.w(TAG, "preferChinese override: " + e.getMessage());
+                    com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "preferChinese override: " + e.getMessage());
                 }
+            } else {
+                
             }
             try {
                 java.util.ArrayList<Track> list = new java.util.ArrayList<>();
                 Track tr = new Track(C.TRACK_TYPE_TEXT, selLabel, selMime);
                 tr.setSelected(true);
+                // TrackUtil.find 优先用 playerId == Format.id
+                try {
+                    if (bestFmt != null && bestFmt.id != null) {
+                        tr.setPlayerId(String.valueOf(bestFmt.id));
+                    }
+                } catch (Throwable ignored) {
+                }
                 if (!TextUtils.isEmpty(player.getKey())) {
                     try { tr.setKey(player.getKey()); } catch (Throwable ignored) {}
                 }
                 try { tr.save(); } catch (Throwable ignored) {}
                 list.add(tr);
                 player.setTrack(list);
+                
             } catch (Throwable e) {
-                Log.w(TAG, "preferChinese setTrack: " + e.getMessage());
+                com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "preferChinese setTrack: " + e.getMessage());
             }
-            Log.i(TAG, "preferChineseEmbedded OK score=" + bestScore + " label=" + selLabel);
+            // 校验是否真的选中
+            boolean nowBest = false;
+            try {
+                if (pl != null) {
+                    Tracks t2 = pl.getCurrentTracks();
+                    if (t2 != null) {
+                        for (Tracks.Group g : t2.getGroups()) {
+                            if (g.getType() != C.TRACK_TYPE_TEXT) continue;
+                            for (int i = 0; i < g.length; i++) {
+                                if (g.isTrackSelected(i) && g == bestGroup && i == bestIndex) {
+                                    nowBest = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+            
+            
+            if (applied) {
+                sPreferChineseSettleAt = System.currentTimeMillis() + 2500L;
+                String lk = detectSubLang(selLabel, bestFmt != null ? bestFmt.language : "");
+                if ("simp".equals(lk) || "zh".equals(lk)) markEmbeddedSticky(selLabel);
+            }
             return true;
         } catch (Throwable e) {
-            Log.w(TAG, "preferChineseEmbedded: " + e.getMessage());
+            com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "preferChineseEmbedded: " + e.getMessage());
             return false;
         }
     }
@@ -1964,7 +2235,7 @@ public final class AssrtSubtitleMatch {
                 }
             }
             if (bestGroup == null || bestIndex < 0 || bestScore < 25) {
-                Log.i(TAG, "tryRestoreEmbedded skip score=" + bestScore + " name=" + wantName + " idx=" + wantIdx);
+                
                 return false;
             }
             String selLabel = bestFmt != null && bestFmt.label != null ? bestFmt.label : wantName;
@@ -1982,7 +2253,7 @@ public final class AssrtSubtitleMatch {
                             .build();
                     pl.setTrackSelectionParameters(params);
                 } catch (Throwable e) {
-                    Log.w(TAG, "tryRestoreEmbedded override: " + e.getMessage());
+                    com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "tryRestoreEmbedded override: " + e.getMessage());
                 }
             }
             // 2) 与 TrackDialog 相同：setTrack + save，防止随后被默认轨覆盖
@@ -1997,12 +2268,12 @@ public final class AssrtSubtitleMatch {
                 list.add(tr);
                 player.setTrack(list);
             } catch (Throwable e) {
-                Log.w(TAG, "tryRestoreEmbedded setTrack: " + e.getMessage());
+                com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "tryRestoreEmbedded setTrack: " + e.getMessage());
             }
-            Log.i(TAG, "tryRestoreEmbedded OK score=" + bestScore + " label=" + selLabel + " name=" + wantName + " idx=" + wantIdx);
+            
             return true;
         } catch (Throwable e) {
-            Log.w(TAG, "tryRestoreEmbedded: " + e.getMessage());
+            com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "tryRestoreEmbedded: " + e.getMessage());
             return false;
         }
     }
@@ -2025,9 +2296,9 @@ public final class AssrtSubtitleMatch {
                     putCommit(key + "_name", name);
                 }
             }
-            Log.i(TAG, "persistChosenNameOnly " + name);
+            /* log silenced */
         } catch (Throwable e) {
-            Log.w(TAG, "persistChosenNameOnly: " + e.getMessage());
+            com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "persistChosenNameOnly: " + e.getMessage());
         }
     }
 

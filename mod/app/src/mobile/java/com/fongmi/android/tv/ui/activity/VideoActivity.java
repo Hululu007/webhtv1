@@ -976,12 +976,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         setupActionButtons();
         mBinding.video.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
             mPiP.update(this, view);
-            Log.d(SIZE_TAG, "video layout new=" + (right - left) + "x" + (bottom - top)
-                    + " old=" + (oldRight - oldLeft) + "x" + (oldBottom - oldTop)
-                    + " fullscreen=" + isFullscreen()
-                    + " land=" + isLand()
-                    + " scale=" + getScale()
-                    + " player=" + (service() == null ? "none" : player().getPlayerText()));
+            /* Log.d SIZE_TAG silenced */
         });
     }
 
@@ -3349,8 +3344,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
 
     private void generateKaraokeTrack() {
         List<LyricsLine> lines = getKaraokeGenerationLines();
-        android.util.Log.i("karaoke-generate", "rhythm requested lines=" + lines.size() + " inline=" + (!TextUtils.isEmpty(mInlineLyrics)) + " service=" + (service() != null));
-        if (service() == null || !KaraokeTrackRepository.canGenerate(lines)) {
+        /* log silenced */if (service() == null || !KaraokeTrackRepository.canGenerate(lines)) {
             Notify.show(R.string.player_karaoke_track_generate_no_lyrics);
             return;
         }
@@ -3371,8 +3365,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     private void generateKaraokePitchTrack() {
         List<LyricsLine> lines = getKaraokeGenerationLines();
         KaraokeTrackRepository.MediaInput input = service() == null ? null : KaraokeTrackRepository.snapshot(player());
-        android.util.Log.i("karaoke-generate", "pitch requested basicPitch=" + PlayerSetting.isKaraokeBasicPitchTflite() + " lines=" + lines.size() + " input=" + (input == null ? "null" : input.getUrl()));
-        if (!KaraokeTrackRepository.canGeneratePitch(input, lines)) {
+        /* log silenced */if (!KaraokeTrackRepository.canGeneratePitch(input, lines)) {
             Notify.show(R.string.player_karaoke_track_generate_no_lyrics);
             return;
         }
@@ -4114,7 +4107,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
 
     private void setTransition() {
         if (!shouldAnimateVideoFrameTransition()) {
-            Log.d(SIZE_TAG, "video transition skipped native player=" + player().getPlayerText());
+            /* Log.d SIZE_TAG silenced */
             return;
         }
         ChangeBounds transition = new ChangeBounds();
@@ -5986,15 +5979,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
 
     private void logVideoFrame(String step) {
         if (mBinding == null) return;
-        Log.d(SIZE_TAG, "video " + step
-                + " frameParam=" + (mFrameParams == null ? "null" : mFrameParams.width + "x" + mFrameParams.height)
-                + " frameHeight=" + mFrameHeight
-                + " video=" + viewSize(mBinding.video)
-                + " exo=" + viewSize(mBinding.exo)
-                + " fullscreen=" + isFullscreen()
-                + " land=" + isLand()
-                + " scale=" + getScale()
-                + " player=" + (service() == null ? "none" : player().getPlayerText()));
+        /* Log.d SIZE_TAG silenced */
     }
 
     private static String viewSize(View view) {

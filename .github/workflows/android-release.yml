@@ -5,6 +5,7 @@ on:
     # 每天6小时检查是否需要打包
     - cron: "0 */6 * * *"
   workflow_dispatch:
+   
 
 permissions:
   contents: write
@@ -218,6 +219,11 @@ jobs:
             echo "🔒 mod/"
           fi
 
+          if [ -f clear.py ]; then
+            cp -a clear.py /tmp/webhtv-protected/clear.py
+            echo "🔒 clear.py"
+          fi
+
           if [ -f .github/workflows/android-release.yml ]; then
             mkdir -p /tmp/webhtv-protected/workflows
             cp -a .github/workflows/android-release.yml \
@@ -238,6 +244,7 @@ jobs:
             --exclude='.git/' \
             --exclude='README.md' \
             --exclude='mod/' \
+            --exclude='clear.py' \
             --exclude='.github/workflows/android-release.yml' \
             /tmp/webhtv-upstream/ \
             ./
@@ -251,6 +258,11 @@ jobs:
             rm -rf mod
             cp -a /tmp/webhtv-protected/mod mod
             echo "🔒 已恢复 mod/"
+          fi
+
+          if [ -f /tmp/webhtv-protected/clear.py ]; then
+            cp -a /tmp/webhtv-protected/clear.py clear.py
+            echo "🔒 已恢复 clear.py"
           fi
 
           if [ -f /tmp/webhtv-protected/workflows/android-release.yml ]; then
@@ -295,6 +307,12 @@ jobs:
             echo "✅ mod/ 未被修改"
           else
             echo "❌ mod/ 被修改"
+            PROTECTED_CHANGED=1
+          fi
+          if git diff --cached --quiet -- clear.py; then
+            echo "✅ clear.py 未被修改"
+          else
+            echo "❌ clear.py 被修改"
             PROTECTED_CHANGED=1
           fi
           if git diff --cached --quiet -- .github/workflows/android-release.yml; then
@@ -448,57 +466,7 @@ jobs:
           else
             echo "No mod/apply.sh, skip"
           fi
-      - name: Disable MPV (inject + verify)
-        if: steps.should_build.outputs.build == 'true'
-        run: |
-          set -euo pipefail
-          if [ ! -f mod/hooks/inject_disable_mpv.py ]; then
-            echo "ERROR: mod/hooks/inject_disable_mpv.py missing"
-            exit 1
-          fi
-          python3 mod/hooks/inject_disable_mpv.py .
-          echo "---- post-inject proof ----"
-          grep -n "MPV_DISABLED" app/src/main/java/com/fongmi/android/tv/setting/PlayerSetting.java || true
-          grep -n "MPV_DISABLED" app/src/main/java/com/fongmi/android/tv/player/PlayerManager.java || true
-          grep -n "MPV_DISABLED" app/src/main/java/com/fongmi/android/tv/ui/dialog/PlayerKernelDialog.java || true
-          if grep -q "new MpvPlayerEngine" app/src/main/java/com/fongmi/android/tv/player/PlayerManager.java; then
-            echo "ERROR: new MpvPlayerEngine still present"
-            exit 1
-          fi
-          if ! grep -q "MPV_DISABLED: never construct MpvPlayerEngine" app/src/main/java/com/fongmi/android/tv/player/PlayerManager.java; then
-            echo "ERROR: buildEngine guard missing"
-            exit 1
-          fi
-          if ! grep -q "MPV_DISABLED: only EXO / IJK" app/src/main/java/com/fongmi/android/tv/ui/dialog/PlayerKernelDialog.java; then
-            echo "ERROR: PlayerKernelDialog not patched"
-            exit 1
-          fi
-          echo "MPV disable verified"
-      - name: Strip MPV native assets (phase 2)
-        if: steps.should_build.outputs.build == 'true'
-        run: |
-          set -euo pipefail
-          python3 mod/hooks/inject_strip_mpv_assets.py .
-          if find app -path '*/mpv-libs/*.so' 2>/dev/null | grep -q .; then
-            echo "ERROR: mpv-libs .so still present"
-            find app -path '*/mpv-libs/*.so'
-            exit 1
-          fi
-          echo "MPV native strip verified"
-      - name: Relax Gradle Daemon JVM lock
-        if: steps.should_build.outputs.build == 'true'
-        run: |
-          # 上游 gradle/gradle-daemon-jvm.properties 锁定 JetBrains JDK 21 + Foojay
-          # CI 用的是 Temurin 21，vendor 不匹配就会去拉 Foojay，常返回 400
-          set -e
-          if [ -f gradle/gradle-daemon-jvm.properties ]; then
-            echo "---- before ----"
-            cat gradle/gradle-daemon-jvm.properties || true
-            rm -f gradle/gradle-daemon-jvm.properties
-            echo "✅ removed gradle/gradle-daemon-jvm.properties"
-          else
-            echo "no gradle-daemon-jvm.properties (ok)"
-          fi
+
       # ============================================================
       # Prepare Signing and Patch Resources
       # ============================================================
@@ -601,20 +569,14 @@ jobs:
       - name: Set up Android SDK
         if: steps.should_build.outputs.build == 'true'
         uses: android-actions/setup-android@v4
-        with:
-          # 空字符串 = 不装默认的 tools（已废弃，会报 Failed to find package 'tools'）
-          packages: ''
 
       - name: Install Android packages
         if: steps.should_build.outputs.build == 'true'
         run: |
-          set -e
-          yes | sdkmanager --licenses >/dev/null 2>&1 || true
-          # 不要写 tools
           sdkmanager \
             "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
+            "platforms;android-37.0" \
+            "build-tools;37.0.0"
 
       # ============================================================
       # WebSocket Danmaku tests
@@ -859,11 +821,12 @@ jobs:
           if manual:
               parts.append(manual)
           else:
-              parts.append("基于鱼壳移植默壳同步构建的魔改版")
+              parts.append("基于鱼壳上游同步构建的魔改")
 
           if up_body:
               parts.append("")
-             
+              parts.append("")
+              parts.append("")
               if up_tag:
                   parts.append(f"### 上游更新（fish2018/webhtv {up_tag}）")
               else:
@@ -959,6 +922,20 @@ jobs:
           ls -lh dist/
 
       # ============================================================
+      # Create GitHub Release
+      #
+      # 重要：
+      #
+      # --repo "${GITHUB_REPOSITORY}"
+      #
+      # 强制指定目标仓库为：
+      #
+      # klcb2010/webhtv
+      #
+      # 即使存在 upstream remote，也不会去：
+      #
+      # fish2018/webhtv/releases
+      # ============================================================
       - name: Create GitHub Release
         if: steps.should_build.outputs.build == 'true'
         env:
@@ -966,14 +943,16 @@ jobs:
           RELEASE_NOTES: ${{ steps.release_notes.outputs.notes }}
         run: |
           set -e
+
           PRERELEASE_FLAG=""
+
           if [ "${{ inputs.prerelease }}" = "true" ] \
             || [ "${{ steps.meta.outputs.channel }}" = "beta" ]; then
+
             PRERELEASE_FLAG="--prerelease"
           fi
 
           NOTES="${RELEASE_NOTES:-手动触发 GitHub Actions 构建发布。}"
-          TARGET_SHA="$(git rev-parse HEAD)"
 
           echo "=========================================="
           echo "创建 GitHub Release"
@@ -982,13 +961,12 @@ jobs:
           echo "Tag: ${{ steps.meta.outputs.tag }}"
           echo "Title: ${{ steps.meta.outputs.title }}"
           echo "Channel: ${{ steps.meta.outputs.channel }}"
-          echo "Target SHA: $TARGET_SHA"
           echo "=========================================="
 
           gh release create \
             "${{ steps.meta.outputs.tag }}" \
             --repo "${GITHUB_REPOSITORY}" \
-            --target "$TARGET_SHA" \
+            --target "${GITHUB_SHA}" \
             --title "${{ steps.meta.outputs.title }}" \
             --notes "$NOTES" \
             $PRERELEASE_FLAG \
@@ -999,3 +977,4 @@ jobs:
           echo "=========================================="
           echo "✅ GitHub Release 创建成功"
           echo "=========================================="
+

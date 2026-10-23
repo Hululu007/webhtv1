@@ -52,7 +52,7 @@ public final class SubtitleRestoreCoordinator {
             if (!TextUtils.isEmpty(vod)) putCommit(cacheKey("vod:" + vod, remarks), json);
         } catch (Throwable ignored) {
         }
-        Log.i(TAG, "remember key=" + history.getKey() + " ep=" + episodeUrl + " url=" + durable.getUrl());
+        /* log silenced */
         return true;
     }
 
@@ -64,7 +64,7 @@ public final class SubtitleRestoreCoordinator {
         String json = SubtitleSource.encode(source);
         putCommit(cacheKey(historyKey, episodeUrl), json);
         if (!TextUtils.isEmpty(historyKey)) putCommit(cacheKey(historyKey, ""), json);
-        Log.i(TAG, "remember key=" + historyKey + " url=" + durable.getUrl());
+        /* log silenced */
         return true;
     }
 
@@ -88,7 +88,7 @@ public final class SubtitleRestoreCoordinator {
             }
         }
         SubtitleRestorePolicy.Decision decision = SubtitleRestorePolicy.decide(source, episodeUrl, false);
-        Log.i(TAG, "restore decision=" + decision.reason() + " has=" + (source != null));
+        /* log silenced */
         if (decision.clear()) {
             clear(history.getKey(), episodeUrl);
             clear(history.getKey(), "");
@@ -107,7 +107,7 @@ public final class SubtitleRestoreCoordinator {
         try {
             player.getClass().getMethod("setSub", Sub.class).invoke(player, sub);
         } catch (Throwable e) {
-            Log.w(TAG, "setSub failed: " + e.getMessage());
+            com.fongmi.android.tv.utils.ModDebugLog.w(TAG, "setSub failed: " + e.getMessage());
         }
     }
 

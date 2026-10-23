@@ -59,6 +59,7 @@ public class SettingPersonalActivity extends BaseActivity {
         try { mBinding.exitClearCache.setOnClickListener(this::setExitClearCache); } catch (Throwable ignored) {}
         try { mBinding.subtitleColor.setOnClickListener(this::setSubtitleColor); } catch (Throwable ignored) {}
         try { mBinding.subtitleFont.setOnClickListener(this::setSubtitleFont); } catch (Throwable ignored) {}
+        try { mBinding.kaitiScale.setOnClickListener(this::setKaiTiScale); } catch (Throwable ignored) {}
         mBinding.episodeHistory.setOnClickListener(this::setEpisodeHistory);
         mBinding.globalHistory.setOnClickListener(this::setGlobalHistory);
         mBinding.playBackToDetail.setOnClickListener(this::setPlayBackToDetail);
@@ -90,6 +91,7 @@ public class SettingPersonalActivity extends BaseActivity {
         try { mBinding.exitClearCacheText.setText(exitClearCacheLabel()); } catch (Throwable ignored) {}
         try { mBinding.subtitleColorText.setText(subtitleColorLabel()); } catch (Throwable ignored) {}
         try { mBinding.subtitleFontText.setText(subtitleFontLabel()); } catch (Throwable ignored) {}
+        try { mBinding.kaitiScaleText.setText(Setting.getKaiTiScaleLabel(true)); } catch (Throwable ignored) {}
         mBinding.episodeHistoryText.setText(getSwitch(Setting.isEpisodeHistory()));
         int gh = Setting.getGlobalHistoryMode();
         if (globalHistoryMode != null && gh >= 0 && gh < globalHistoryMode.length) {
@@ -117,7 +119,7 @@ public class SettingPersonalActivity extends BaseActivity {
         try { mBinding.homeEnterLiveText.setText(getSwitch(Setting.isHomeEnterLive())); } catch (Throwable ignored) {}
         try { mBinding.liveDefaultFullscreenText.setText(getSwitch(Setting.isLiveDefaultFullscreen())); } catch (Throwable ignored) {}
         try { mBinding.eac3SoftDecodeText.setText(getSwitch(Setting.isEac3SoftDecode())); } catch (Throwable ignored) {}
-        try { mBinding.searchPanFirstText.setText(getSwitch(Setting.isSearchPanFirst())); } catch (Throwable ignored) {}
+        try { mBinding.searchPanFirstText.setText(Setting.getSearchResultPreferText()); } catch (Throwable ignored) {}
         try { mBinding.playDirectPanPreferText.setText(getSwitch(Setting.isPlayDirectPanPrefer())); } catch (Throwable ignored) {}
         try { mBinding.hideHomeTypeMoreText.setText(getSwitch(Setting.isHideHomeTypeMore())); } catch (Throwable ignored) {}
         try { mBinding.webviewLiveText.setText(getSwitch(Setting.isWebViewLiveEnabled())); } catch (Throwable ignored) {}
@@ -210,7 +212,9 @@ public class SettingPersonalActivity extends BaseActivity {
 
     private void setSubtitleFont(View view) {
         Setting.cycleSubtitleFont();
+        try { mBinding.subtitleFontText.setText(subtitleFontLabel()); } catch (Throwable ignored) {}
         try { com.fongmi.android.tv.subtitle.AssrtSubtitleMatch.notifySubtitleStyleChanged(); } catch (Throwable ignored) {}
+        try { com.fongmi.android.tv.player.exo.ExoUtil.reapplySubtitleStyle(); } catch (Throwable ignored) {}
         refreshTexts();
     }
 
@@ -325,8 +329,9 @@ public class SettingPersonalActivity extends BaseActivity {
 
     private void setSearchPanFirst(View view) {
         try {
-            Setting.putSearchPanFirst(!Setting.isSearchPanFirst());
-            mBinding.searchPanFirstText.setText(getSwitch(Setting.isSearchPanFirst()));
+            int next = (Setting.getSearchResultPrefer() + 1) % 5;
+            Setting.putSearchResultPrefer(next);
+            mBinding.searchPanFirstText.setText(Setting.getSearchResultPreferText());
         } catch (Throwable ignored) {
         }
     }
@@ -381,4 +386,11 @@ public class SettingPersonalActivity extends BaseActivity {
         }
     }
 
+
+    private void setKaiTiScale(View view) {
+        Setting.cycleKaiTiScale();
+        try { mBinding.kaitiScaleText.setText(Setting.getKaiTiScaleLabel(true)); } catch (Throwable ignored) {}
+        try { com.fongmi.android.tv.subtitle.AssrtSubtitleMatch.notifySubtitleStyleChanged(); } catch (Throwable ignored) {}
+        try { com.fongmi.android.tv.player.exo.ExoUtil.reapplySubtitleStyle(); } catch (Throwable ignored) {}
+    }
 }

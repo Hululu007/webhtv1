@@ -11,13 +11,13 @@ fi
 MOD="$(cd "$(dirname "$0")" && pwd)"
 echo "[mod] root=$ROOT"
 
-# 同步根目录 fonts/ 到 assets（kaiti/heiyuan/xiyuan）
+# 同步根目录 fonts/ 到 assets（yiqicukai/huipianheyuan/fangzhengzhunyuan）
 sync_subtitle_fonts() {
   local src_dir="$MOD/fonts"
   local dst_dir="$MOD/app/src/main/assets/fonts"
   mkdir -p "$dst_dir"
   if [[ -d "$src_dir" ]]; then
-    for id in kaiti heiyuan xiyuan; do
+    for id in yiqicukai huipianheyuan fangzhengzhunyuan; do
       for ext in ttf otf TTF OTF ttc TTC ""; do
         local f
         if [[ -n "$ext" ]]; then f="$src_dir/${id}.${ext}"; else f="$src_dir/${id}"; fi
@@ -150,11 +150,65 @@ run_hook "$MOD/hooks/inject_track_selector_context.py"
 run_hook "$MOD/hooks/inject_pan_prefer.py"
 run_hook "$MOD/hooks/inject_hide_type_more.py"
 run_hook "$MOD/hooks/inject_home_row_order.py"
+if [[ -f "$MOD/hooks/inject_home_buttons_order.py" ]]; then
+  echo "[mod] inject_home_buttons_order"
+  python3 "$MOD/hooks/inject_home_buttons_order.py" "$ROOT" || exit 1
+fi
+if [[ -f "$MOD/hooks/inject_ui_polish.py" ]]; then
+  echo "[mod] inject_ui_polish"
+  python3 "$MOD/hooks/inject_ui_polish.py" "$ROOT" || exit 1
+fi
+if [[ -f "$MOD/hooks/inject_player_buttons_fix.py" ]]; then
+  echo "[mod] inject_player_buttons_fix"
+  python3 "$MOD/hooks/inject_player_buttons_fix.py" "$ROOT" || exit 1
+fi
+if [[ -f "$MOD/hooks/inject_push_tv_newintent.py" ]]; then
+  echo "[mod] inject_push_tv_newintent"
+  python3 "$MOD/hooks/inject_push_tv_newintent.py" "$ROOT" || exit 1
+fi
+
+# SHELL_JAR_SETTINGS_REDO — 综合设置「线路排序/下载线程」壳子原生 TV UI
+# 回退：删除 hooks/inject_jar_settings_shell.py 与 app/.../JarPanSettingsShell.java
+if [[ -f "$MOD/hooks/inject_jar_settings_shell.py" ]]; then
+  echo "[mod] inject_jar_settings_shell"
+  python3 "$MOD/hooks/inject_jar_settings_shell.py" "$ROOT" || exit 1
+fi
+
+if [[ -f "$MOD/hooks/inject_live_channel_zorder.py" ]]; then
+  echo "[mod] inject_live_channel_zorder"
+  python3 "$MOD/hooks/inject_live_channel_zorder.py" "$ROOT" || exit 1
+fi
 run_hook "$MOD/hooks/fix_update_setting_stubs.py"
 run_hook "$MOD/hooks/inject_result_msg_ui.py"
 
 if [[ -f "$MOD/hooks/inject_subtitle_style.py" ]]; then
   python3 "$MOD/hooks/inject_subtitle_style.py" "$ROOT"
+fi
+# 楷体自动放大：必须在 inject_subtitle_style 之后（改写 reapplySubtitleStyle）
+if [[ -f "$MOD/hooks/inject_kaiti_scale.py" ]]; then
+  echo "[mod] inject_kaiti_scale"
+  python3 "$MOD/hooks/inject_kaiti_scale.py" "$ROOT" || exit 1
+fi
+if [[ -f "$MOD/hooks/inject_prefer_text_lang.py" ]]; then
+  echo "[mod] inject_prefer_text_lang"
+  python3 "$MOD/hooks/inject_prefer_text_lang.py" "$ROOT" || exit 1
+fi
+if [[ -f "$MOD/hooks/patch_protect_clear_py.py" ]]; then
+  echo "[mod] patch_protect_clear_py"
+  python3 "$MOD/hooks/patch_protect_clear_py.py" "$ROOT" || true
+fi
+# 全局禁用 MPV（若脚本存在）
+if [[ -f "$MOD/hooks/inject_disable_mpv.py" ]]; then
+  echo "[mod] inject_disable_mpv"
+  python3 "$MOD/hooks/inject_disable_mpv.py" "$ROOT" || exit 1
+fi
+if [[ -f "$MOD/hooks/inject_silence_mpv_size.py" ]]; then
+  echo "[mod] inject_silence_mpv_size"
+  python3 "$MOD/hooks/inject_silence_mpv_size.py" "$ROOT" || exit 1
+fi
+if [[ -f "$MOD/hooks/inject_strip_mpv_assets.py" ]]; then
+  echo "[mod] inject_strip_mpv_assets"
+  python3 "$MOD/hooks/inject_strip_mpv_assets.py" "$ROOT" || exit 1
 fi
 if [[ -f "$MOD/hooks/inject_toast_gate.py" ]]; then
   python3 "$MOD/hooks/inject_toast_gate.py" "$ROOT"
