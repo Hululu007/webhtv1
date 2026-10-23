@@ -77,8 +77,8 @@ def patch_collect_adapter(path: pathlib.Path) -> None:
     }"""
     new = """    public void add(Collect item) {
         try {
-            if (com.fongmi.android.tv.setting.Setting.isSearchPanFirst()
-                    && com.fongmi.android.tv.utils.PanSiteHelper.isPanCollect(item)
+            if (com.fongmi.android.tv.setting.Setting.isSearchPreferActive()
+                    && com.fongmi.android.tv.utils.PanSiteHelper.matchesSearchPreferCollect(item)
                     && mItems.size() > 1) {
                 mItems.add(1, item);
                 notifyItemInserted(1);
@@ -116,10 +116,10 @@ def patch_collect_activity(path: pathlib.Path) -> None:
             "SiteHealthStore.sortSites(mSites);",
             """SiteHealthStore.sortSites(mSites);
         try {
-            if (com.fongmi.android.tv.setting.Setting.isSearchPanFirst()) {
+            if (com.fongmi.android.tv.setting.Setting.isSearchPreferActive()) {
                 mSites.sort((a, b) -> {
-                    boolean ap = com.fongmi.android.tv.utils.PanSiteHelper.isPanSite(a);
-                    boolean bp = com.fongmi.android.tv.utils.PanSiteHelper.isPanSite(b);
+                    boolean ap = com.fongmi.android.tv.utils.PanSiteHelper.matchesSearchPreferSite(a);
+                    boolean bp = com.fongmi.android.tv.utils.PanSiteHelper.matchesSearchPreferSite(b);
                     if (ap == bp) return 0;
                     return ap ? -1 : 1;
                 });
@@ -134,10 +134,10 @@ def patch_collect_activity(path: pathlib.Path) -> None:
             r"private void addSearchItems\(List<Vod> items\)\s*\{",
             """private void addSearchItems(List<Vod> items) {
         try {
-            if (com.fongmi.android.tv.setting.Setting.isSearchPanFirst() && items != null && items.size() > 1) {
+            if (com.fongmi.android.tv.setting.Setting.isSearchPreferActive() && items != null && items.size() > 1) {
                 items = new java.util.ArrayList<>(items);
                 items.sort((a, b) -> {
-                    boolean ap = com.fongmi.android.tv.utils.PanSiteHelper.isPanVod(a);
+                    boolean ap = com.fongmi.android.tv.utils.PanSiteHelper.matchesSearchPrefer(a);
                     boolean bp = com.fongmi.android.tv.utils.PanSiteHelper.isPanVod(b);
                     if (ap == bp) return 0;
                     return ap ? -1 : 1;
@@ -166,11 +166,15 @@ def patch_video(path: pathlib.Path) -> None:
     old = "        mQuickAdapter.addAll(items);"
     new = """        try {
             if (com.fongmi.android.tv.setting.Setting.isPlayDirectPanPrefer()
-                    || com.fongmi.android.tv.setting.Setting.isSearchPanFirst()) {
+                    || com.fongmi.android.tv.setting.Setting.isSearchPreferActive()) {
                 items = new java.util.ArrayList<>(items);
                 items.sort((a, b) -> {
-                    boolean ap = com.fongmi.android.tv.utils.PanSiteHelper.isPanVod(a);
-                    boolean bp = com.fongmi.android.tv.utils.PanSiteHelper.isPanVod(b);
+                    boolean ap = com.fongmi.android.tv.setting.Setting.isPlayDirectPanPrefer()
+                            ? com.fongmi.android.tv.utils.PanSiteHelper.isPanVod(a)
+                            : com.fongmi.android.tv.utils.PanSiteHelper.matchesSearchPrefer(a);
+                    boolean bp = com.fongmi.android.tv.setting.Setting.isPlayDirectPanPrefer()
+                            ? com.fongmi.android.tv.utils.PanSiteHelper.isPanVod(b)
+                            : com.fongmi.android.tv.utils.PanSiteHelper.matchesSearchPrefer(b);
                     if (ap == bp) return 0;
                     return ap ? -1 : 1;
                 });
@@ -198,10 +202,10 @@ def patch_collect_fragment(path: pathlib.Path) -> None:
             "SiteHealthStore.sortSites(mSites);",
             """SiteHealthStore.sortSites(mSites);
         try {
-            if (com.fongmi.android.tv.setting.Setting.isSearchPanFirst()) {
+            if (com.fongmi.android.tv.setting.Setting.isSearchPreferActive()) {
                 mSites.sort((a, b) -> {
-                    boolean ap = com.fongmi.android.tv.utils.PanSiteHelper.isPanSite(a);
-                    boolean bp = com.fongmi.android.tv.utils.PanSiteHelper.isPanSite(b);
+                    boolean ap = com.fongmi.android.tv.utils.PanSiteHelper.matchesSearchPreferSite(a);
+                    boolean bp = com.fongmi.android.tv.utils.PanSiteHelper.matchesSearchPreferSite(b);
                     if (ap == bp) return 0;
                     return ap ? -1 : 1;
                 });
@@ -226,10 +230,10 @@ def patch_collect_fragment(path: pathlib.Path) -> None:
         if (result == null || result.getList().isEmpty()) return;
         List<Vod> items = new ArrayList<>(result.getList());
         try {
-            if (com.fongmi.android.tv.setting.Setting.isSearchPanFirst()) {
+            if (com.fongmi.android.tv.setting.Setting.isSearchPreferActive()) {
                 items.sort((a, b) -> {
-                    boolean ap = com.fongmi.android.tv.utils.PanSiteHelper.isPanVod(a);
-                    boolean bp = com.fongmi.android.tv.utils.PanSiteHelper.isPanVod(b);
+                    boolean ap = com.fongmi.android.tv.utils.PanSiteHelper.matchesSearchPrefer(a);
+                    boolean bp = com.fongmi.android.tv.utils.PanSiteHelper.matchesSearchPrefer(b);
                     if (ap == bp) return 0;
                     return ap ? -1 : 1;
                 });
@@ -237,12 +241,12 @@ def patch_collect_fragment(path: pathlib.Path) -> None:
         } catch (Throwable ignored) {
         }
         try {
-            if (com.fongmi.android.tv.setting.Setting.isSearchPanFirst()) {
+            if (com.fongmi.android.tv.setting.Setting.isSearchPreferActive()) {
                 // pan batches → front of 全部
                 java.util.List<Vod> pan = new java.util.ArrayList<>();
                 java.util.List<Vod> rest = new java.util.ArrayList<>();
                 for (Vod v : items) {
-                    if (com.fongmi.android.tv.utils.PanSiteHelper.isPanVod(v)) pan.add(v);
+                    if (com.fongmi.android.tv.utils.PanSiteHelper.matchesSearchPrefer(v)) pan.add(v);
                     else rest.add(v);
                 }
                 mAllResults.addAll(0, pan);
@@ -259,8 +263,8 @@ def patch_collect_fragment(path: pathlib.Path) -> None:
         }
         Collect created = Collect.create(items);
         try {
-            if (com.fongmi.android.tv.setting.Setting.isSearchPanFirst()
-                    && com.fongmi.android.tv.utils.PanSiteHelper.isPanCollect(created)
+            if (com.fongmi.android.tv.setting.Setting.isSearchPreferActive()
+                    && com.fongmi.android.tv.utils.PanSiteHelper.matchesSearchPreferCollect(created)
                     && mCollects.size() > 1) {
                 mCollects.add(1, created);
             } else {

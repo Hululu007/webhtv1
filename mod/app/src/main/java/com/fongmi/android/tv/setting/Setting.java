@@ -787,13 +787,52 @@ public class Setting {
         Prefers.put("eac3_soft_decode", value);
     }
 
-    /** 搜索结果：网盘站点/条目排到前面（默认关） */
+    /** 搜索结果排序优先：0速度 1网盘 2音乐 3短剧 */
+    public static final int SEARCH_PREFER_SPEED = 0;
+    public static final int SEARCH_PREFER_PAN = 1;
+    public static final int SEARCH_PREFER_MUSIC = 2;
+    public static final int SEARCH_PREFER_SHORT = 3;
+    public static final int SEARCH_PREFER_VOD = 4; // 影视
+
+    public static int getSearchResultPrefer() {
+        int v = Prefers.getInt("search_result_prefer", -1);
+        if (v >= 0 && v <= 4) return v;
+        // 兼容旧开关：搜索结果网盘在前
+        return Prefers.getBoolean("search_pan_first", false) ? SEARCH_PREFER_PAN : SEARCH_PREFER_SPEED;
+    }
+
+    public static void putSearchResultPrefer(int value) {
+        if (value < 0 || value > 4) value = SEARCH_PREFER_SPEED;
+        Prefers.put("search_result_prefer", value);
+    }
+
+    /** 非速度模式时为 true（排序注入用） */
+    public static boolean isSearchPreferActive() {
+        return getSearchResultPrefer() != SEARCH_PREFER_SPEED;
+    }
+
+    /** 兼容旧名：仅当选中「网盘」时为 true */
     public static boolean isSearchPanFirst() {
-        return Prefers.getBoolean("search_pan_first", false);
+        return getSearchResultPrefer() == SEARCH_PREFER_PAN;
     }
 
     public static void putSearchPanFirst(boolean value) {
-        Prefers.put("search_pan_first", value);
+        putSearchResultPrefer(value ? SEARCH_PREFER_PAN : SEARCH_PREFER_SPEED);
+    }
+
+    public static String getSearchResultPreferText() {
+        switch (getSearchResultPrefer()) {
+            case SEARCH_PREFER_PAN:
+                return "网盘";
+            case SEARCH_PREFER_MUSIC:
+                return "音乐";
+            case SEARCH_PREFER_SHORT:
+                return "短剧";
+            case SEARCH_PREFER_VOD:
+                return "影视";
+            default:
+                return "速度";
+        }
     }
 
     /** 直达播放：优先选网盘结果（默认关） */
@@ -1017,39 +1056,18 @@ public class Setting {
     }
 
     /**
-     * 字幕字体：系统默认 / 楷体 / 黑圆 / 细圆。
-     * index: 0=系统默认, 1=楷体, 2=黑圆(默认), 3=细圆。
-     * 旧配置一次性迁移；默认仍为黑圆。
+     * 字幕字体：义启粗楷 / 毁片和圆 / 方正细圆 / 系统默认。
+     * index: 0=义启粗楷(默认), 1=毁片和圆, 2=方正细圆, 3=系统默认。
      */
     public static int getSubtitleFontIndex() {
-        int v = Prefers.getInt("subtitle_font_index", 2); // 默认黑圆
+        int v = Prefers.getInt("subtitle_font_index", 0); // 默认义启粗楷
         if (v < 0) v = 0;
-        // v4：去掉幼圆后的 4 档（上一版 0系统 1幼圆 2楷体 3黑圆 4细圆）
-        boolean migratedV4 = Prefers.getBoolean("subtitle_font_index_v4", false);
-        if (!migratedV4) {
-            boolean migratedV3 = Prefers.getBoolean("subtitle_font_index_v3", false);
-            if (!migratedV3) {
-                boolean migratedV2 = Prefers.getBoolean("subtitle_font_index_v2", false);
-                if (!migratedV2) {
-                    if (v >= 0 && v <= 2) v = v + 1;
-                    try { Prefers.put("subtitle_font_index_v2", true); } catch (Throwable ignored) {}
-                }
-                // 含浪圆 5 档 → 曾 4 档含幼圆
-                if (v == 1) v = 3;       // 浪圆 → 黑圆
-                else if (v == 2) v = 1;  // 幼圆占位，后面再映
-                else if (v == 3) v = 2;  // 楷体
-                else if (v == 4) v = 3;  // 黑圆
-                else if (v > 4) v = 2;
-                try { Prefers.put("subtitle_font_index_v3", true); } catch (Throwable ignored) {}
-            }
-            // 含幼圆：0系统 1幼圆 2楷体 3黑圆 4细圆 → 0系统 1楷体 2黑圆 3细圆
-            if (v == 1) v = 2;       // 幼圆 → 黑圆
-            else if (v == 2) v = 1;  // 楷体
-            else if (v == 3) v = 2;  // 黑圆
-            else if (v == 4) v = 3;  // 细圆
-            else if (v > 4) v = 2;
+        boolean migratedV5 = Prefers.getBoolean("subtitle_font_index_v5", false);
+        if (!migratedV5) {
+            // 旧配置一律回到默认义启粗楷
+            v = 0;
             try { Prefers.put("subtitle_font_index", v); } catch (Throwable ignored) {}
-            try { Prefers.put("subtitle_font_index_v4", true); } catch (Throwable ignored) {}
+            try { Prefers.put("subtitle_font_index_v5", true); } catch (Throwable ignored) {}
         }
         return SubtitleFontManager.normalizeIndex(v);
     }
@@ -1062,7 +1080,7 @@ public class Setting {
         putSubtitleFontIndex((getSubtitleFontIndex() + 1) % SubtitleFontManager.count());
     }
 
-    /** 稳定 ID：system / kaiti / heiyuan / xiyuan */
+    /** 稳定 ID：yiqicukai / huipianheyuan / fangzhengzhunyuan / system */
     public static String getSubtitleFontId() {
         return SubtitleFontManager.idOf(getSubtitleFontIndex());
     }
@@ -1093,6 +1111,100 @@ public class Setting {
         }
         return zh ? "雅黑" : "YaHei";
     }
+
+
+    // ---------- 楷体（义启粗楷等）自动放大 ----------
+    private static final float[] KAITI_SCALES = {1.00f, 1.15f, 1.20f, 1.30f};
+    private static final String[] KAITI_SCALE_LABELS_ZH = {"1.00x", "1.15x", "1.20x", "1.30x"};
+    private static final String[] KAITI_SCALE_LABELS_EN = {"1.00x", "1.15x", "1.20x", "1.30x"};
+    /** Media3 SubtitleView 默认 fractional 字号（相对画面高度），作基准避免叠加。 */
+    public static final float SUBTITLE_BASE_FRACTION = 0.0533f;
+
+    public static int getKaiTiScaleIndex() {
+        int v = Prefers.getInt("subtitle_kaiti_scale_index", 2); // 默认中幅 1.20
+        if (v < 0 || v >= KAITI_SCALES.length) v = 2;
+        return v;
+    }
+
+    public static void putKaiTiScaleIndex(int index) {
+        if (index < 0) index = 0;
+        if (index >= KAITI_SCALES.length) index = KAITI_SCALES.length - 1;
+        Prefers.put("subtitle_kaiti_scale_index", index);
+    }
+
+    public static void cycleKaiTiScale() {
+        putKaiTiScaleIndex((getKaiTiScaleIndex() + 1) % KAITI_SCALES.length);
+    }
+
+    public static float getKaiTiScaleFactor() {
+        return KAITI_SCALES[getKaiTiScaleIndex()];
+    }
+
+    public static String getKaiTiScaleLabel(boolean zh) {
+        int i = getKaiTiScaleIndex();
+        return zh ? KAITI_SCALE_LABELS_ZH[i] : KAITI_SCALE_LABELS_EN[i];
+    }
+
+    /**
+     * 当前字幕字体是否为「楷体系」（义启粗楷 / KaiTi / 楷体等）。
+     * 圆体、系统默认返回 false。
+     */
+    public static boolean isKaiTiLikeSubtitleFont() {
+        try {
+            String id = getSubtitleFontId();
+            if (id == null) id = "";
+            String s = id.toLowerCase(java.util.Locale.ROOT);
+            if (s.contains("yiqi") || s.contains("cukai") || "kaiti".equals(s) || s.contains("kai")) {
+                // 排除仅含 kai 但实际是其他 id 的误伤：圆体 id 不含 kai
+                if (s.contains("yuan") || s.contains("hei") || s.contains("you") || "system".equals(s)) return false;
+                return true;
+            }
+            String zh = getSubtitleFontLabel(true);
+            if (zh != null && (zh.contains("粗楷") || zh.contains("楷体") || zh.contains("义启"))) return true;
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
+    /** 最终应用到 SubtitleView 的倍率：非楷体恒为 1.0，楷体为所选档位。 */
+    public static float getEffectiveSubtitleFontScale() {
+        return isKaiTiLikeSubtitleFont() ? getKaiTiScaleFactor() : 1.0f;
+    }
+
+    /**
+     * 与播放页 SubtitleDialog（large/small）同一套字号体系：
+     * base = PlayerSetting.getSubtitleTextSize()（<=0 则用 0.0533），再乘楷体倍率。
+     * 只改渲染，不写回 preference，避免叠加。
+     */
+    public static void applySubtitleViewTextSize(Object subtitleView) {
+        if (subtitleView == null) return;
+        float scale = getEffectiveSubtitleFontScale();
+        float base = SUBTITLE_BASE_FRACTION;
+        try {
+            float v = com.fongmi.android.tv.setting.PlayerSetting.getSubtitleTextSize();
+            if (v > 0f) base = v;
+        } catch (Throwable ignored) {
+        }
+        float size = base * scale;
+        if (size < 0.02f) size = 0.02f;
+        if (size > 0.15f) size = 0.15f;
+        try {
+            java.lang.reflect.Method m = subtitleView.getClass().getMethod("setFractionalTextSize", float.class);
+            m.invoke(subtitleView, size);
+        } catch (Throwable e) {
+            try {
+                // 兼容带 userDefault 参数的重载
+                java.lang.reflect.Method m = subtitleView.getClass().getMethod("setFractionalTextSize", float.class, boolean.class);
+                m.invoke(subtitleView, size, false);
+            } catch (Throwable ignored) {
+            }
+        }
+        try {
+            /* log silenced */} catch (Throwable ignored) {
+        }
+    }
+
+
 
     public static int getExitClearCacheGb() {
         int v = Prefers.getInt("exit_clear_cache_gb", 0);
