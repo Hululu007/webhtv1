@@ -99,19 +99,6 @@ def patch_site_api() -> None:
                 com.fongmi.android.tv.ui.dialog.JarPanSettingsShell.openPost(key, id);
                 return com.fongmi.android.tv.bean.Result.empty();
             }
-            try {
-                if (id != null) {
-                    String _ls = id.toLowerCase();
-                    if (_ls.contains("panlogin") || _ls.contains("login")) {
-                        android.app.Activity _la = null;
-                        try { _la = com.fongmi.android.tv.App.activity(); } catch (Throwable ignored) {}
-                        if (_la != null) {
-                            com.fongmi.android.tv.ui.dialog.JarPanSettingsShell.scheduleLoginFocusEnhance(_la);
-                        }
-                    }
-                }
-            } catch (Throwable ignored) {
-            }
         } catch (Throwable ignored) {
         }
 """
@@ -155,36 +142,36 @@ def patch_site_api() -> None:
 
 
 def patch_video() -> None:
-    snip = (
-        "\n"
-        "        // SHELL_JAR_SETTINGS_REDO: TV 线路排序/下载线程/账号登录\n"
-        "        try {\n"
-        "            String _id = getId();\n"
-        "            String _name = null;\n"
-        "            try { _name = getName(); } catch (Throwable ignored) {}\n"
-        "            if (com.fongmi.android.tv.ui.dialog.JarPanSettingsShell.isShellPanel(_id, _name)) {\n"
-        "                com.fongmi.android.tv.ui.dialog.JarPanSettingsShell.open(this, getKey(), _id, _name);\n"
-        "                return;\n"
-        "            }\n"
-        "        } catch (Throwable ignored) {\n"
-        "        }\n"
-    )
+    snip = """
+        // SHELL_JAR_SETTINGS_REDO: TV 线路排序/下载线程（账号登录不劫持）
+        try {
+            String _id = getId();
+            String _name = null;
+            try { _name = getName(); } catch (Throwable ignored) {}
+            if (com.fongmi.android.tv.ui.dialog.JarPanSettingsShell.isShellPanel(_id, _name)) {
+                com.fongmi.android.tv.ui.dialog.JarPanSettingsShell.open(this, getKey(), _id, _name);
+                return;
+            }
+        } catch (Throwable ignored) {
+        }
+"""
     for flavor in ("leanback", "mobile"):
         path = ROOT / f"app/src/{flavor}/java/com/fongmi/android/tv/ui/activity/VideoActivity.java"
         if not path.is_file():
             continue
         t = path.read_text(encoding="utf-8")
-        if "SHELL_JAR_SETTINGS_REDO: TV 线路排序/下载线程/账号登录" in t:
-            print("[mod] VideoActivity already v14", flavor)
+        if "账号登录不劫持" in t:
+            print("[mod] VideoActivity already v20", flavor)
             continue
-        # remove any previous SHELL_JAR_SETTINGS_REDO blocks near checkId
-        t = re.sub(
+        # drop old SHELL_JAR_SETTINGS_REDO inserts
+        import re as _re
+        t = _re.sub(
             r"\n[ \t]*// SHELL_JAR_SETTINGS_REDO[\s\S]*?catch \(Throwable ignored\) \{\s*\}",
             "",
             t,
-            count=5,
+            count=8,
         )
-        m = re.search(r"(private void checkId\(\)\s*\{)", t)
+        m = _re.search(r"(private void checkId\(\)\s*\{)", t)
         if not m:
             print("[mod] WARN no checkId", flavor)
             continue
