@@ -35,7 +35,7 @@ import java.util.List;
 import java.util.concurrent.Executors;
 
 /**
- * SHELL_JAR_SETTINGS_REDO v14
+ * SHELL_JAR_SETTINGS_REDO v15
  * 淡蓝背景 + 完整线路列表可滚动 + 下载线程需确认 + 账号登录壳子列表带高亮
  */
 public final class JarPanSettingsShell {
@@ -121,6 +121,7 @@ public final class JarPanSettingsShell {
         sOpening = true;
         try {
             if (name != null && (name.contains("账号登录") || name.contains("帐号登录"))) {
+                sBypassLoginUntil = 0; // 再次打开列表本身不走 bypass
                 openLogin(activity, siteKey);
                 return;
             }
@@ -135,6 +136,7 @@ public final class JarPanSettingsShell {
         if (s.contains("thread") || (id != null && id.contains(ID_THREAD))) {
             openThread(activity);
         } else if (s.contains("login") || (id != null && id.contains(ID_LOGIN))) {
+            sBypassLoginUntil = 0;
             openLogin(activity, siteKey);
         } else {
             openLineOrder(activity);
@@ -837,21 +839,23 @@ public final class JarPanSettingsShell {
 
 
 
-    /** TV 账号登录：与线路排序同一套壳子行+蓝框（已验证有效），不再依赖 jar 焦点增强 */
+
+    /**
+     * TV 账号登录：蓝框用「选中下标」驱动，不依赖系统焦点（避免二次打开无框）。
+     */
     private static void openLogin(Activity activity, String siteKey) {
         LinearLayout root = column(activity);
         root.setBackgroundColor(BG_PANEL);
         root.addView(title(activity, "账号登录"));
-        root.addView(sub(activity, "上下键移动 · OK 进入该网盘登录（下级仍走 jar）"));
+        root.addView(sub(activity, "上下键选择 · OK 进入该网盘登录"));
 
         final ScrollView scroll = new ScrollView(activity);
         scroll.setFocusable(false);
         scroll.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
-        LinearLayout list = new LinearLayout(activity);
+        final LinearLayout list = new LinearLayout(activity);
         list.setOrientation(LinearLayout.VERTICAL);
         list.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
 
-        // 与肥猫综合设置常见入口一致
         final String[][] entries = new String[][]{
                 {"夸克网盘", "quark", "扫码/更新登录"},
                 {"UC网盘", "uc", "扫码/更新登录"},
@@ -864,32 +868,70 @@ public final class JarPanSettingsShell {
                 {"光鸭云盘", "guangya", "扫码/更新登录"},
         };
 
-        AlertDialog[] dialogRef = new AlertDialog[1];
-        List<LinearLayout> rows = new ArrayList<>();
+        final int[] sel = {0};
+        final List<LinearLayout> rows = new ArrayList<>();
+        final AlertDialog[] dialogRef = new AlertDialog[1];
+        final Runnable[] paint = new Runnable[1];
 
-        for (String[] e : entries) {
+        paint[0] = () -> {
+            for (int i = 0; i < rows.size(); i++) {
+                applyRowFocus(activity, rows.get(i), i == sel[0]);
+            }
+            if (sel[0] >= 0 && sel[0] < rows.size()) {
+                View v = rows.get(sel[0]);
+                scroll.post(() -> {
+                    try {
+                        int top = v.getTop();
+                        int bottom = v.getBottom();
+                        int sl = scroll.getScrollY();
+                        int sh = scroll.getHeight();
+                        if (top < sl) scroll.smoothScrollTo(0, top);
+                        else if (bottom > sl + sh) scroll.smoothScrollTo(0, bottom - sh);
+                    } catch (Throwable ignored) {
+                    }
+                });
+            }
+        };
+
+        for (int i = 0; i < entries.length; i++) {
+            final int idx = i;
+            String[] e = entries[i];
             LinearLayout row = makeRow(activity, e[0], e[2]);
             row.setId(View.generateViewId());
             final String panKey = e[1];
             final String panName = e[0];
             row.setOnFocusChangeListener((v, has) -> {
-                applyRowFocus(activity, v, has);
                 if (has) {
-                    scroll.post(() -> {
-                        try {
-                            int top = v.getTop();
-                            int bottom = v.getBottom();
-                            int sl = scroll.getScrollY();
-                            int sh = scroll.getHeight();
-                            if (top < sl) scroll.smoothScrollTo(0, top);
-                            else if (bottom > sl + sh) scroll.smoothScrollTo(0, bottom - sh);
-                        } catch (Throwable ignored) {
-                        }
-                    });
+                    sel[0] = idx;
+                    paint[0].run();
                 }
             });
+            row.setOnKeyListener((v, keyCode, event) -> {
+                if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
+                if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                    if (sel[0] > 0) {
+                        sel[0]--;
+                        paint[0].run();
+                        rows.get(sel[0]).requestFocus();
+                        return true;
+                    }
+                } else if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                    if (sel[0] < rows.size() - 1) {
+                        sel[0]++;
+                        paint[0].run();
+                        rows.get(sel[0]).requestFocus();
+                        return true;
+                    }
+                } else if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER
+                        || keyCode == KeyEvent.KEYCODE_ENTER) {
+                    row.performClick();
+                    return true;
+                }
+                return false;
+            });
             row.setOnClickListener(v -> {
-                // 放行 jar 弹下级，避免再被壳子拦截
+                sel[0] = idx;
+                paint[0].run();
                 sBypassLoginUntil = android.os.SystemClock.uptimeMillis() + 8000;
                 if (dialogRef[0] != null) dialogRef[0].dismiss();
                 sOpening = false;
@@ -914,14 +956,24 @@ public final class JarPanSettingsShell {
         dialog.setCancelable(true);
         dialog.setOnShowListener(d -> {
             styleWindow(dialog);
-            if (!rows.isEmpty()) {
-                LinearLayout first = rows.get(0);
-                first.post(() -> {
-                    for (LinearLayout r : rows) applyRowFocus(activity, r, false);
-                    applyRowFocus(activity, first, true);
-                    first.requestFocus();
-                });
+            sel[0] = 0;
+            // 多次 post，防止二次打开时焦点被 Decor 抢走后蓝框被清掉
+            Runnable force = () -> {
+                paint[0].run();
+                if (!rows.isEmpty()) rows.get(sel[0]).requestFocus();
+                paint[0].run();
+            };
+            list.post(force);
+            list.postDelayed(force, 50);
+            list.postDelayed(force, 200);
+            list.postDelayed(force, 400);
+        });
+        dialog.setOnKeyListener((d, keyCode, event) -> {
+            if (keyCode == KeyEvent.KEYCODE_BACK && event.getAction() == KeyEvent.ACTION_UP) {
+                dialog.dismiss();
+                return true;
             }
+            return false;
         });
         attachDismissFinish(activity, dialog);
         try {
