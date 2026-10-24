@@ -131,7 +131,7 @@ def patch_home_web_controller() -> None:
     if old_err in t:
         t = t.replace(old_err, new_err, 1)
         print("[mod] onReceivedError recovery hook")
-    elif "recoverMainFrameViaOkHttp" not in t:
+    elif "private boolean recoverMainFrameViaOkHttp" not in t:
         print("[mod] WARN onReceivedError block not exact")
         # try softer match
         t2, n = re.subn(
@@ -167,7 +167,7 @@ def patch_home_web_controller() -> None:
         mainRecoverAttempts++;
         final String target = url;
         final int token = loadToken;
-        App.execute(() -> {
+        new Thread(() -> {
             try {
                 Map<String, String> headers = site == null ? Collections.emptyMap() : site.getHeader();
                 okhttp3.Request.Builder b = new okhttp3.Request.Builder().url(target).get();
@@ -176,7 +176,7 @@ def patch_home_web_controller() -> None:
                         if (e.getKey() != null && e.getValue() != null) b.header(e.getKey(), e.getValue());
                     }
                 }
-                String ua = header(headers, com.google.common.net.HttpHeaders.USER_AGENT);
+                String ua = header(headers, "User-Agent");
                 if (!TextUtils.isEmpty(ua)) b.header("User-Agent", ua);
                 else b.header("User-Agent", webView.getSettings().getUserAgentString());
                 okhttp3.Response resp = com.github.catvod.net.OkHttp.client().newCall(b.build()).execute();
@@ -201,7 +201,7 @@ def patch_home_web_controller() -> None:
             } catch (Throwable e) {
                 // recovery exception silent
             }
-        });
+        }).start();
         return true;
     }
 
