@@ -184,6 +184,12 @@ if [[ -f "$MOD/hooks/inject_webhome_fix.py" ]]; then
   python3 "$MOD/hooks/inject_webhome_fix.py" "$ROOT" || exit 1
 fi
 
+if [[ -f "$MOD/hooks/inject_webhome_tv_fullscreen_btn.py" ]]; then
+  echo "[mod] inject_webhome_tv_fullscreen_btn"
+  python3 "$MOD/hooks/inject_webhome_tv_fullscreen_btn.py" "$ROOT" || exit 1
+fi
+
+
 if [[ -f "$MOD/hooks/inject_live_channel_zorder.py" ]]; then
   echo "[mod] inject_live_channel_zorder"
   python3 "$MOD/hooks/inject_live_channel_zorder.py" "$ROOT" || exit 1
