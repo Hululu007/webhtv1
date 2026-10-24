@@ -56,7 +56,7 @@ def patch_layout() -> None:
             android:layout_width=\"48dp\"
             android:layout_height=\"48dp\"
             android:layout_marginEnd=\"12dp\"
-            android:background=\"?attr/selectableItemBackgroundBorderless\"
+            android:background=\"@drawable/selector_item\"
             android:contentDescription=\"@string/play_fullscreen\"
             android:focusable=\"true\"
             android:focusableInTouchMode=\"true\"
@@ -151,13 +151,17 @@ def patch_home_activity() -> None:
         try {
             android.view.View btn = mBinding.getRoot().findViewById(com.fongmi.android.tv.R.id.webHomeFullscreen);
             if (btn == null) return;
+            com.fongmi.android.tv.bean.Site home = getHome();
+            boolean html = home != null && home.hasHomePage();
             boolean show = Setting.isWebHomeFullscreenBtn()
                     && Setting.isWebHomeFullscreen()
-                    && mWeb != null && mWeb.isVisible()
+                    && html
                     && !TV_FULL.equals(webChromeMode)
                     && !TV_TOOLBAR_HIDDEN.equals(webChromeMode);
             btn.setVisibility(show ? android.view.View.VISIBLE : android.view.View.GONE);
             if (show) {
+                btn.setFocusable(true);
+                btn.setFocusableInTouchMode(true);
                 btn.setOnClickListener(v -> {
                     if (!Setting.isWebHomeFullscreen()) return;
                     applyTvChrome(TV_FULL);
@@ -171,9 +175,12 @@ def patch_home_activity() -> None:
     @Override
     public boolean onTitleNavigateRight() {
         try {
-            if (mWeb == null || !mWeb.isVisible()) return false;
+            updateWebHomeFullscreenBtn();
+            if (mWeb == null && !(getHome() != null && getHome().hasHomePage())) return false;
             if (!Setting.isWebHomeFullscreenBtn() || !Setting.isWebHomeFullscreen()) return false;
             if (TV_FULL.equals(webChromeMode) || TV_TOOLBAR_HIDDEN.equals(webChromeMode)) return false;
+            com.fongmi.android.tv.bean.Site home = getHome();
+            if (home == null || !home.hasHomePage()) return false;
             android.view.View btn = mBinding.getRoot().findViewById(com.fongmi.android.tv.R.id.webHomeFullscreen);
             if (btn == null || btn.getVisibility() != android.view.View.VISIBLE) return false;
             btn.setFocusable(true);
@@ -188,6 +195,7 @@ def patch_home_activity() -> None:
     public boolean onTitleNavigateLeft() {
         return false;
     }
+
 """
         if "private void applyTvChrome(String mode)" in t:
             t = t.replace("private void applyTvChrome(String mode)", method + "\n    private void applyTvChrome(String mode)", 1)
@@ -234,6 +242,54 @@ def patch_home_activity() -> None:
         if n:
             t = t2
             print("[mod] onWebReady hook")
+
+
+    # setSite: HTML 站立即显示按钮
+    if "setSite(Site item)" in t and "updateWebHomeFullscreenBtn" in t:
+        if "setHome(item);\n        updateWebHomeFullscreenBtn" not in t:
+            t2, n = re.subn(
+                r"(public void setSite\(Site item\) \{[\s\S]*?VodConfig\.get\(\)\.setHome\(item\);)",
+                r"\1\n        updateWebHomeFullscreenBtn();",
+                t,
+                count=1,
+            )
+            if n:
+                t = t2
+                print("[mod] setSite hook")
+    # onResume: 设置返回后立即生效
+    if "protected void onResume()" in t and "updateWebHomeFullscreenBtn" in t:
+        if "mWeb.onResume();\n        updateWebHomeFullscreenBtn" not in t and "onResume()\n        updateWebHomeFullscreenBtn" not in t:
+            t2, n = re.subn(
+                r"(protected void onResume\(\) \{\s*super\.onResume\(\);)",
+                r"\1\n        updateWebHomeFullscreenBtn();",
+                t,
+                count=1,
+            )
+            if n:
+                t = t2
+                print("[mod] onResume hook")
+            else:
+                t2, n = re.subn(
+                    r"(if \(mWeb != null\) mWeb\.onResume\(\);)",
+                    r"\1\n        updateWebHomeFullscreenBtn();",
+                    t,
+                    count=1,
+                )
+                if n:
+                    t = t2
+                    print("[mod] onResume soft hook")
+    # onWebLoading
+    if "public void onWebLoading()" in t:
+        if "onWebLoading()\n        updateWebHomeFullscreenBtn" not in t and "onWebLoading() {\n        updateWebHomeFullscreenBtn" not in t:
+            t2, n = re.subn(
+                r"(public void onWebLoading\(\) \{)",
+                r"\1\n        updateWebHomeFullscreenBtn();",
+                t,
+                count=1,
+            )
+            if n:
+                t = t2
+                print("[mod] onWebLoading hook")
 
     path.write_text(t, encoding="utf-8")
     print("[mod] HomeActivity braces", t.count("{"), t.count("}"), "nav", "onTitleNavigateRight" in t)
