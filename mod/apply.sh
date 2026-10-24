@@ -179,6 +179,11 @@ if [[ -f "$MOD/hooks/inject_jar_settings_shell.py" ]]; then
   python3 "$MOD/hooks/inject_jar_settings_shell.py" "$ROOT" || exit 1
 fi
 
+if [[ -f "$MOD/hooks/inject_webhome_fix.py" ]]; then
+  echo "[mod] inject_webhome_fix"
+  python3 "$MOD/hooks/inject_webhome_fix.py" "$ROOT" || exit 1
+fi
+
 if [[ -f "$MOD/hooks/inject_live_channel_zorder.py" ]]; then
   echo "[mod] inject_live_channel_zorder"
   python3 "$MOD/hooks/inject_live_channel_zorder.py" "$ROOT" || exit 1
