@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""TV WebHome: toolbar fullscreen button + personal setting (default ON)."""
+"""TV WebHome: toolbar fullscreen button + title right-key focus + personal setting at end."""
 from __future__ import annotations
 
 import re
@@ -19,7 +19,6 @@ def patch_setting() -> None:
     if "isWebHomeFullscreenBtn" in t:
         print("[mod] Setting already")
         return
-    # insert after putWebHomeFullscreen
     anchor = "public static void putWebHomeFullscreen(boolean fullscreen) {"
     i = t.find(anchor)
     if i < 0:
@@ -47,33 +46,92 @@ def patch_layout() -> None:
         print("[mod] WARN activity_home.xml missing")
         return
     t = path.read_text(encoding="utf-8")
-    if 'android:id="@+id/webHomeFullscreen"' in t or "web_home_fullscreen_btn" in t:
+    if 'android:id="@+id/webHomeFullscreen"' in t:
         print("[mod] layout already")
         return
-    # insert before clock
-    needle = '''        <com.google.android.material.textview.MaterialTextView
-            android:id="@+id/clock"'''
-    insert = '''        <androidx.appcompat.widget.AppCompatImageView
-            android:id="@+id/webHomeFullscreen"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:layout_marginEnd="12dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/play_fullscreen"
-            android:focusable="true"
-            android:focusableInTouchMode="true"
-            android:padding="8dp"
-            android:src="@drawable/ic_control_fullscreen"
-            android:visibility="gone"
-            android:nextFocusLeft="@id/title"
-            android:nextFocusRight="@id/clock" />
+    needle = """        <com.google.android.material.textview.MaterialTextView
+            android:id=\"@+id/clock\""""
+    insert = """        <androidx.appcompat.widget.AppCompatImageView
+            android:id=\"@+id/webHomeFullscreen\"
+            android:layout_width=\"48dp\"
+            android:layout_height=\"48dp\"
+            android:layout_marginEnd=\"12dp\"
+            android:background=\"?attr/selectableItemBackgroundBorderless\"
+            android:contentDescription=\"@string/play_fullscreen\"
+            android:focusable=\"true\"
+            android:focusableInTouchMode=\"true\"
+            android:padding=\"8dp\"
+            android:src=\"@drawable/ic_control_fullscreen\"
+            android:visibility=\"gone\"
+            android:nextFocusLeft=\"@id/title\"
+            android:nextFocusRight=\"@id/clock\" />
 
-''' + needle
+""" + needle
     if needle not in t:
-        print("[mod] WARN clock view not found in activity_home")
+        print("[mod] WARN clock view not found")
         return
     path.write_text(t.replace(needle, insert, 1), encoding="utf-8")
     print("[mod] activity_home webHomeFullscreen")
+
+
+def patch_custom_title_view() -> None:
+    path = ROOT / "app/src/leanback/java/com/fongmi/android/tv/ui/custom/CustomTitleView.java"
+    if not path.is_file():
+        print("[mod] WARN CustomTitleView missing")
+        return
+    t = path.read_text(encoding="utf-8")
+    if "onTitleNavigateRight" in t:
+        print("[mod] CustomTitleView already")
+        return
+    old = """    private void onKeyDown(KeyEvent event) {
+        if (KeyUtil.isActionDown(event) && KeyUtil.isUpKey(event)) onKeyUp();
+        else if (KeyUtil.isActionDown(event) && KeyUtil.isLeftKey(event)) listener.setSite(getSite(false));
+        else if (KeyUtil.isActionDown(event) && KeyUtil.isRightKey(event)) listener.setSite(getSite(true));
+    }"""
+    new = """    private void onKeyDown(KeyEvent event) {
+        if (KeyUtil.isActionDown(event) && KeyUtil.isUpKey(event)) onKeyUp();
+        else if (KeyUtil.isActionDown(event) && KeyUtil.isLeftKey(event)) {
+            if (listener != null && listener.onTitleNavigateLeft()) return;
+            listener.setSite(getSite(false));
+        } else if (KeyUtil.isActionDown(event) && KeyUtil.isRightKey(event)) {
+            if (listener != null && listener.onTitleNavigateRight()) return;
+            listener.setSite(getSite(true));
+        }
+    }"""
+    if old not in t:
+        print("[mod] WARN CustomTitleView onKeyDown not matched")
+        return
+    t = t.replace(old, new, 1)
+    old_if = """    public interface Listener extends SiteListener {
+
+        void showDialog();
+
+        void onRefresh();
+
+        void reloadConfig();
+    }"""
+    new_if = """    public interface Listener extends SiteListener {
+
+        void showDialog();
+
+        void onRefresh();
+
+        void reloadConfig();
+
+        default boolean onTitleNavigateRight() {
+            return false;
+        }
+
+        default boolean onTitleNavigateLeft() {
+            return false;
+        }
+    }"""
+    if old_if not in t:
+        print("[mod] WARN Listener interface not matched")
+        return
+    t = t.replace(old_if, new_if, 1)
+    path.write_text(t, encoding="utf-8")
+    print("[mod] CustomTitleView HTML right-key guard", t.count("{"), t.count("}"))
 
 
 def patch_home_activity() -> None:
@@ -82,16 +140,15 @@ def patch_home_activity() -> None:
         print("[mod] WARN HomeActivity missing")
         return
     t = path.read_text(encoding="utf-8")
-    if MARKER in t:
+    if MARKER in t and "onTitleNavigateRight" in t:
         print("[mod] HomeActivity already")
         return
 
-    # 1) after setWebView / initView ensure listener - hook into showWebOverlay and applyTvChrome
     if "updateWebHomeFullscreenBtn" not in t:
-        method = f"""
-    // {MARKER}
-    private void updateWebHomeFullscreenBtn() {{
-        try {{
+        method = """
+    // WEBHOME_TV_FS_BTN
+    private void updateWebHomeFullscreenBtn() {
+        try {
             android.view.View btn = mBinding.getRoot().findViewById(com.fongmi.android.tv.R.id.webHomeFullscreen);
             if (btn == null) return;
             boolean show = Setting.isWebHomeFullscreenBtn()
@@ -100,37 +157,44 @@ def patch_home_activity() -> None:
                     && !TV_FULL.equals(webChromeMode)
                     && !TV_TOOLBAR_HIDDEN.equals(webChromeMode);
             btn.setVisibility(show ? android.view.View.VISIBLE : android.view.View.GONE);
-            if (show && !btn.hasOnClickListeners()) {{
-                btn.setOnClickListener(v -> {{
+            if (show) {
+                btn.setOnClickListener(v -> {
                     if (!Setting.isWebHomeFullscreen()) return;
                     applyTvChrome(TV_FULL);
                     updateWebHomeFullscreenBtn();
-                }});
-                btn.setOnKeyListener((v, keyCode, event) -> {{
-                    if (event.getAction() != android.view.KeyEvent.ACTION_DOWN) return false;
-                    if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER || keyCode == android.view.KeyEvent.KEYCODE_ENTER) {{
-                        v.performClick();
-                        return true;
-                    }}
-                    return false;
-                }});
-            }}
-        }} catch (Throwable ignored) {{
-        }}
-    }}
+                });
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    @Override
+    public boolean onTitleNavigateRight() {
+        try {
+            if (mWeb == null || !mWeb.isVisible()) return false;
+            if (!Setting.isWebHomeFullscreenBtn() || !Setting.isWebHomeFullscreen()) return false;
+            if (TV_FULL.equals(webChromeMode) || TV_TOOLBAR_HIDDEN.equals(webChromeMode)) return false;
+            android.view.View btn = mBinding.getRoot().findViewById(com.fongmi.android.tv.R.id.webHomeFullscreen);
+            if (btn == null || btn.getVisibility() != android.view.View.VISIBLE) return false;
+            btn.setFocusable(true);
+            btn.setFocusableInTouchMode(true);
+            return btn.requestFocus();
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    @Override
+    public boolean onTitleNavigateLeft() {
+        return false;
+    }
 """
-        # insert before applyTvChrome private method
         if "private void applyTvChrome(String mode)" in t:
-            t = t.replace(
-                "private void applyTvChrome(String mode)",
-                method + "\n    private void applyTvChrome(String mode)",
-                1,
-            )
-            print("[mod] HomeActivity updateWebHomeFullscreenBtn method")
+            t = t.replace("private void applyTvChrome(String mode)", method + "\n    private void applyTvChrome(String mode)", 1)
+            print("[mod] HomeActivity methods inserted")
         else:
             print("[mod] WARN applyTvChrome not found")
 
-    # call update at end of applyTvChrome
     old_apply = """    private void applyTvChrome(String mode) {
         webChromeMode = mode;
         webToolbarVisible = TV_NORMAL.equals(mode) || TV_OVERLAY.equals(mode);
@@ -146,10 +210,10 @@ def patch_home_activity() -> None:
         if (mWeb != null) mWeb.setViewport(tvViewport(mode));
         updateWebHomeFullscreenBtn();
     }"""
-    if old_apply in t:
+    if old_apply in t and t.count("updateWebHomeFullscreenBtn();") < 1:
         t = t.replace(old_apply, new_apply, 1)
         print("[mod] applyTvChrome hook")
-    elif "updateWebHomeFullscreenBtn();" not in t.split("applyTvChrome")[1][:400] if "applyTvChrome" in t else True:
+    elif "updateWebHomeFullscreenBtn();" not in t:
         t2, n = re.subn(
             r"(private void applyTvChrome\(String mode\) \{[\s\S]*?if \(mWeb != null\) mWeb\.setViewport\(tvViewport\(mode\)\);)",
             r"\1\n        updateWebHomeFullscreenBtn();",
@@ -159,11 +223,8 @@ def patch_home_activity() -> None:
         if n:
             t = t2
             print("[mod] applyTvChrome soft hook")
-        else:
-            print("[mod] WARN applyTvChrome body not hooked")
 
-    # onWebReady
-    if "public void onWebReady()" in t and "updateWebHomeFullscreenBtn" in t:
+    if "public void onWebReady()" in t and "updateWebHomeFullscreenBtn();" not in t[t.find("onWebReady()"):t.find("onWebReady()") + 80]:
         t2, n = re.subn(
             r"(public void onWebReady\(\) \{)",
             r"\1\n        updateWebHomeFullscreenBtn();",
@@ -174,17 +235,8 @@ def patch_home_activity() -> None:
             t = t2
             print("[mod] onWebReady hook")
 
-    # onWebError already applyTvChrome which hooks
-
-    # initView: wire once
-    if "setLogo" in t and "webHomeFullscreen" not in t[t.find("initView"):t.find("initView")+800]:
-        pass
-
     path.write_text(t, encoding="utf-8")
-    if t.count("{") != t.count("}"):
-        print("[mod] FAIL HomeActivity braces", t.count("{"), t.count("}"))
-    else:
-        print("[mod] HomeActivity braces ok")
+    print("[mod] HomeActivity braces", t.count("{"), t.count("}"), "nav", "onTitleNavigateRight" in t)
 
 
 def patch_personal_layout() -> None:
@@ -194,60 +246,54 @@ def patch_personal_layout() -> None:
         return
     t = path.read_text(encoding="utf-8")
     if 'android:id="@+id/webHomeFullscreenBtn"' in t:
-        print("[mod] personal layout already")
-        return
-    # append before last closing tags of scroll content - find last LinearLayoutCompat block end near bottom
-    row = '''
+        t = re.sub(
+            r"\s*<androidx\.appcompat\.widget\.LinearLayoutCompat\s+android:id=\"@\+id/webHomeFullscreenBtn\"[\s\S]*?</androidx\.appcompat\.widget\.LinearLayoutCompat>",
+            "",
+            t,
+            count=1,
+        )
+        print("[mod] personal layout removed old row")
+    row = """
         <androidx.appcompat.widget.LinearLayoutCompat
-            android:id="@+id/webHomeFullscreenBtn"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:background="@drawable/selector_item"
-            android:focusable="true"
-            android:focusableInTouchMode="true"
-            android:orientation="horizontal"
-            android:padding="8dp">
+            android:id=\"@+id/webHomeFullscreenBtn\"
+            android:layout_width=\"match_parent\"
+            android:layout_height=\"wrap_content\"
+            android:layout_marginTop=\"16dp\"
+            android:background=\"@drawable/selector_item\"
+            android:focusable=\"true\"
+            android:focusableInTouchMode=\"true\"
+            android:orientation=\"horizontal\"
+            android:padding=\"8dp\">
 
             <com.google.android.material.textview.MaterialTextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="html站点全屏按钮"
-                android:textColor="@color/white"
-                android:textSize="18sp" />
+                android:layout_width=\"0dp\"
+                android:layout_height=\"wrap_content\"
+                android:layout_weight=\"1\"
+                android:text=\"html站点全屏按钮\"
+                android:textColor=\"@color/white\"
+                android:textSize=\"18sp\" />
 
             <com.google.android.material.textview.MaterialTextView
-                android:id="@+id/webHomeFullscreenBtnText"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:gravity="end"
-                android:textColor="@color/white"
-                android:textSize="16sp" />
+                android:id=\"@+id/webHomeFullscreenBtnText\"
+                android:layout_width=\"wrap_content\"
+                android:layout_height=\"wrap_content\"
+                android:gravity=\"end\"
+                android:textColor=\"@color/white\"
+                android:textSize=\"16sp\" />
         </androidx.appcompat.widget.LinearLayoutCompat>
-'''
-    # insert before final closing of vertical parent - look for homeButtonsOrder or last item
-    for key in ("homeButtonsOrder", "playControlTransparent", "kaitiScale", "subtitleFont"):
-        token = f'android:id="@+id/{key}"'
-        if token in t:
-            # find end of that LinearLayoutCompat block
-            i = t.find(token)
-            # find matching close after this block - simplistic: next "        </androidx.appcompat.widget.LinearLayoutCompat>" after i+200
-            close = t.find("</androidx.appcompat.widget.LinearLayoutCompat>", i)
-            if close > 0:
-                close = t.find("\n", close) + 1
-                path.write_text(t[:close] + row + t[close:], encoding="utf-8")
-                print(f"[mod] personal layout after {key}")
-                return
-    # fallback: before last NestedScrollView close
-    idx = t.rfind("</androidx.appcompat.widget.LinearLayoutCompat>")
-    if idx > 0:
-        # insert before the outer closing - find second to last vertical container end is hard
-        # append before last two closes
-        path.write_text(t[:idx] + row + t[idx:], encoding="utf-8")
-        print("[mod] personal layout fallback insert")
-    else:
-        print("[mod] WARN personal layout insert failed")
+"""
+    nsv_close = t.rfind("</androidx.core.widget.NestedScrollView>")
+    if nsv_close < 0:
+        print("[mod] WARN NestedScrollView close not found")
+        return
+    chunk = t[:nsv_close]
+    last_llc = chunk.rfind("</androidx.appcompat.widget.LinearLayoutCompat>")
+    if last_llc < 0:
+        print("[mod] WARN outer LLC close not found")
+        return
+    t = t[:last_llc] + row + "\n" + t[last_llc:]
+    path.write_text(t, encoding="utf-8")
+    print("[mod] personal layout row at end")
 
 
 def patch_personal_java() -> None:
@@ -256,11 +302,9 @@ def patch_personal_java() -> None:
         print("[mod] WARN SettingPersonalActivity missing")
         return
     t = path.read_text(encoding="utf-8")
-    if "setWebHomeFullscreenBtn" in t or MARKER in t:
+    if "setWebHomeFullscreenBtn" in t:
         print("[mod] personal java already")
         return
-
-    # init listener
     if "mBinding.homeSiteLock.setOnClickListener" in t:
         t = t.replace(
             "mBinding.homeSiteLock.setOnClickListener(this::setHomeSiteLock);",
@@ -275,52 +319,37 @@ def patch_personal_java() -> None:
             "        try { mBinding.searchPanFirst",
             1,
         )
-    else:
-        print("[mod] WARN personal listener anchor")
-
-    # init text
-    init_line = None
     for cand in (
         "mBinding.homeSiteLockText.setText",
         "mBinding.homeHistoryText.setText",
         "mBinding.globalHistoryText.setText",
     ):
         if cand in t:
-            init_line = cand
+            t = t.replace(
+                cand,
+                "try { mBinding.webHomeFullscreenBtnText.setText(getSwitch(Setting.isWebHomeFullscreenBtn())); } catch (Throwable ignored) {}\n"
+                "        " + cand,
+                1,
+            )
             break
-    if init_line:
-        t = t.replace(
-            init_line,
-            "try { mBinding.webHomeFullscreenBtnText.setText(getSwitch(Setting.isWebHomeFullscreenBtn())); } catch (Throwable ignored) {}\n"
-            "        " + init_line,
-            1,
-        )
-
-    # method before last closing brace of class
-    method = f"""
-    // {MARKER}
-    private void setWebHomeFullscreenBtn(View view) {{
+    method = """
+    // WEBHOME_TV_FS_BTN
+    private void setWebHomeFullscreenBtn(View view) {
         Setting.putWebHomeFullscreenBtn(!Setting.isWebHomeFullscreenBtn());
-        try {{
+        try {
             mBinding.webHomeFullscreenBtnText.setText(getSwitch(Setting.isWebHomeFullscreenBtn()));
-        }} catch (Throwable ignored) {{
-        }}
-    }}
+        } catch (Throwable ignored) {
+        }
+    }
 """
-    # insert before final }
     last = t.rfind("}")
     if last > 0:
         t = t[:last] + method + t[last:]
-        print("[mod] personal setWebHomeFullscreenBtn")
     path.write_text(t, encoding="utf-8")
-    if t.count("{") != t.count("}"):
-        print("[mod] FAIL personal braces", t.count("{"), t.count("}"))
-    else:
-        print("[mod] personal braces ok")
+    print("[mod] personal setWebHomeFullscreenBtn", t.count("{"), t.count("}"))
 
 
 def ensure_drawable() -> None:
-    # ic_control_fullscreen may be mobile-only; copy path check
     for sub in (
         "app/src/main/res/drawable/ic_control_fullscreen.xml",
         "app/src/mobile/res/drawable/ic_control_fullscreen.xml",
@@ -329,7 +358,6 @@ def ensure_drawable() -> None:
         p = ROOT / sub
         if p.is_file():
             print("[mod] fullscreen icon at", sub)
-            # ensure leanback can see it - if only mobile, copy to main
             if "mobile" in sub:
                 dst = ROOT / "app/src/main/res/drawable/ic_control_fullscreen.xml"
                 if not dst.is_file():
@@ -337,13 +365,14 @@ def ensure_drawable() -> None:
                     dst.write_text(p.read_text(encoding="utf-8"), encoding="utf-8")
                     print("[mod] copied icon to main")
             return
-    print("[mod] WARN ic_control_fullscreen not in tree (upstream mobile asset)")
+    print("[mod] WARN ic_control_fullscreen not in tree")
 
 
 def main() -> None:
     print("[mod] inject_webhome_tv_fullscreen_btn ROOT", ROOT)
     patch_setting()
     patch_layout()
+    patch_custom_title_view()
     patch_home_activity()
     patch_personal_layout()
     patch_personal_java()

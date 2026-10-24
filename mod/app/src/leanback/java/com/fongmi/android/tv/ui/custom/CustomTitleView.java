@@ -78,8 +78,14 @@ public class CustomTitleView extends MaterialTextView {
 
     private void onKeyDown(KeyEvent event) {
         if (KeyUtil.isActionDown(event) && KeyUtil.isUpKey(event)) onKeyUp();
-        else if (KeyUtil.isActionDown(event) && KeyUtil.isLeftKey(event)) listener.setSite(getSite(false));
-        else if (KeyUtil.isActionDown(event) && KeyUtil.isRightKey(event)) listener.setSite(getSite(true));
+        else if (KeyUtil.isActionDown(event) && KeyUtil.isLeftKey(event)) {
+            if (listener != null && listener.onTitleNavigateLeft()) return;
+            listener.setSite(getSite(false));
+        } else if (KeyUtil.isActionDown(event) && KeyUtil.isRightKey(event)) {
+            // HTML 站：右键优先交给宿主（全屏按钮），不切站
+            if (listener != null && listener.onTitleNavigateRight()) return;
+            listener.setSite(getSite(true));
+        }
     }
 
     private void onKeyUp() {
@@ -109,5 +115,15 @@ public class CustomTitleView extends MaterialTextView {
         void onRefresh();
 
         void reloadConfig();
+
+        /** 标题右键：返回 true 表示已消费（如聚焦全屏按钮），不再切站 */
+        default boolean onTitleNavigateRight() {
+            return false;
+        }
+
+        /** 标题左键：返回 true 表示已消费 */
+        default boolean onTitleNavigateLeft() {
+            return false;
+        }
     }
 }
