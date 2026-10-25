@@ -6,6 +6,7 @@ import android.content.pm.Signature;
 import android.os.Build;
 import android.os.SystemClock;
 import android.text.TextUtils;
+import android.util.Log;
 import android.view.View;
 
 import androidx.fragment.app.FragmentActivity;
@@ -52,6 +53,7 @@ import java.util.concurrent.TimeoutException;
 
 public class Updater implements UpdateTransfer.Callback, UpdateListener {
 
+    private static final String TAG = "Updater";
     private static final String DEFAULT_RELEASE_NOTES = "手动触发 GitHub Actions 构建发布。";
     private static final long UPDATE_CHECK_TIMEOUT_MS = TimeUnit.SECONDS.toMillis(10);
     private static final long GITHUB_REQUEST_TIMEOUT_MS = TimeUnit.SECONDS.toMillis(4);
@@ -494,30 +496,61 @@ public class Updater implements UpdateTransfer.Callback, UpdateListener {
     private boolean validatePackage(File file, Update update) {
         try {
             PackageManager manager = App.get().getPackageManager();
-            int flags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ? PackageManager.GET_SIGNING_CERTIFICATES : PackageManager.GET_SIGNATURES;
+            int flags = PackageManager.GET_SIGNATURES;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) flags |= PackageManager.GET_SIGNING_CERTIFICATES;
             PackageInfo archive = manager.getPackageArchiveInfo(file.getAbsolutePath(), flags);
             PackageInfo installed = manager.getPackageInfo(BuildConfig.APPLICATION_ID, flags);
-            if (archive == null || installed == null || !BuildConfig.APPLICATION_ID.equals(archive.packageName)) return false;
+            if (archive == null || installed == null) {
+                Log.w(TAG, "Cannot parse installed or update package");
+                return false;
+            }
+            if (!BuildConfig.APPLICATION_ID.equals(archive.packageName)) {
+                Log.w(TAG, "Update package name mismatch: " + archive.packageName);
+                return false;
+            }
             long archiveCode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ? archive.getLongVersionCode() : archive.versionCode;
-            if (update != null && update.code > 0 && archiveCode != update.code) return false;
-            if (update != null && !TextUtils.isEmpty(update.versionName) && !update.versionName.equals(archive.versionName)) return false;
+            if (update != null && update.code > 0 && archiveCode != update.code) {
+                Log.w(TAG, "Update version code mismatch: " + archiveCode + " != " + update.code);
+                return false;
+            }
+            if (update != null && !TextUtils.isEmpty(update.versionName) && !update.versionName.equals(archive.versionName)) {
+                Log.w(TAG, "Update version name mismatch: " + archive.versionName + " != " + update.versionName);
+                return false;
+            }
             return signaturesMatch(installed, archive);
         } catch (Exception e) {
+            Log.w(TAG, "Cannot validate update package", e);
             return false;
         }
     }
 
     private boolean signaturesMatch(PackageInfo installed, PackageInfo archive) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            if (installed.signingInfo == null || archive.signingInfo == null) return false;
-            if (installed.signingInfo.hasMultipleSigners() || archive.signingInfo.hasMultipleSigners()) {
-                return fingerprints(installed.signingInfo.getApkContentsSigners()).equals(fingerprints(archive.signingInfo.getApkContentsSigners()));
-            }
-            Set<String> current = fingerprints(installed.signingInfo.getApkContentsSigners());
+        Set<String> installedCurrent = currentFingerprints(installed);
+        Set<String> archiveCurrent = currentFingerprints(archive);
+        if (!installedCurrent.isEmpty() && installedCurrent.equals(archiveCurrent)) return true;
+
+        // Certificate rotation applies only to single-signer packages.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && archive.signingInfo != null
+                && installedCurrent.size() == 1 && archiveCurrent.size() == 1
+                && (installed.signingInfo == null || !installed.signingInfo.hasMultipleSigners())
+                && !archive.signingInfo.hasMultipleSigners()) {
             Set<String> candidateHistory = fingerprints(archive.signingInfo.getSigningCertificateHistory());
-            return !current.isEmpty() && candidateHistory.containsAll(current);
+            if (!installedCurrent.isEmpty() && candidateHistory.containsAll(installedCurrent)) return true;
         }
-        return fingerprints(installed.signatures).equals(fingerprints(archive.signatures));
+
+        Log.w(TAG, "Update signature mismatch: installed=" + installedCurrent + ", archive=" + archiveCurrent);
+        return false;
+    }
+
+    private Set<String> currentFingerprints(PackageInfo info) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && info.signingInfo != null) {
+            Set<String> values = fingerprints(info.signingInfo.getApkContentsSigners());
+            if (!values.isEmpty()) return values;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            Log.i(TAG, "Using legacy signature fields for " + info.packageName);
+        }
+        return fingerprints(info.signatures);
     }
 
     private Set<String> fingerprints(Signature[] signatures) {

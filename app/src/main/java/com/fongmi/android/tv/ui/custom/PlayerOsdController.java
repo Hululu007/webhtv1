@@ -172,6 +172,7 @@ public class PlayerOsdController {
             return true;
         }
         setTextSize(miniSp);
+        topRight.setTextSize(TypedValue.COMPLEX_UNIT_SP, Util.isLeanback() ? 20f : miniSp);
         PlayerManager player = source.getPlayer();
         updateSpeed();
         setTopLeft(player);

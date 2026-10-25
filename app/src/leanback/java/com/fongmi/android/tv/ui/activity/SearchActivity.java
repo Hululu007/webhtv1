@@ -354,10 +354,12 @@ public class SearchActivity extends BaseActivity implements WordAdapter.OnClickL
     }
 
     private boolean handleKeywordKey(KeyEvent event) {
+        if (KeyUtil.isLeftKey(event) && mBinding.keyword.getSelectionStart() == 0 && mBinding.recordLayout.getVisibility() == View.VISIBLE) {
+            return focusFirst(mBinding.recordRecycler);
+        }
         if (!KeyUtil.isRightKey(event)) return false;
         if (mBinding.keyword.getSelectionEnd() < mBinding.keyword.getText().length()) return false;
-        boolean hasRecord = mBinding.recordLayout.getVisibility() == View.VISIBLE;
-        return hasRecord ? focusFirst(mBinding.recordRecycler) : focusFirstWord();
+        return focusFirstWord();
     }
 
     private boolean handleKeyboardKey(KeyEvent event, View item) {
@@ -365,21 +367,25 @@ public class SearchActivity extends BaseActivity implements WordAdapter.OnClickL
             mBinding.keyword.requestFocus();
             return true;
         }
-        if (KeyUtil.isLeftKey(event) && isFirstInRow(mBinding.keyboard, item)) return true;
+        if (KeyUtil.isLeftKey(event) && isFirstInRow(mBinding.keyboard, item)) {
+            return mBinding.recordLayout.getVisibility() != View.VISIBLE || focusFirst(mBinding.recordRecycler);
+        }
+        if (KeyUtil.isRightKey(event) && isLastInRow(mBinding.keyboard, item)) return focusFirstWord();
         return KeyUtil.isDownKey(event) && isLastRow(mBinding.keyboard, item);
     }
 
     private boolean handleWordKey(KeyEvent event, View item) {
+        if (KeyUtil.isLeftKey(event) && isFirstInRow(mBinding.wordRecycler, item)) {
+            View child = mBinding.keyboard.getChildAt(0);
+            return child == null || child.requestFocus();
+        }
         if (KeyUtil.isRightKey(event)) return isLastInRow(mBinding.wordRecycler, item);
         if (KeyUtil.isDownKey(event)) return isLastRow(mBinding.wordRecycler, item);
         if (KeyUtil.isUpKey(event) && isFirstRow(mBinding.wordRecycler, item)) {
-            if (mBinding.recordLayout.getVisibility() == View.VISIBLE) {
-                View child = findNearestInLastRow(mBinding.recordRecycler, item.getLeft());
-                if (child != null) {
-                    mBinding.scroll.smoothScrollTo(0, 0);
-                    child.requestFocus();
-                    return true;
-                }
+            View child = mBinding.keyboard.getChildAt(0);
+            if (child != null) {
+                child.requestFocus();
+                return true;
             }
             return true;
         }
@@ -402,13 +408,10 @@ public class SearchActivity extends BaseActivity implements WordAdapter.OnClickL
                 }
                 return focusFirst(prev);
             }
-            if (mBinding.recordLayout.getVisibility() == View.VISIBLE) {
-                View child = findNearestInLastRow(mBinding.recordRecycler, item.getLeft());
-                if (child != null) {
-                    mBinding.scroll.smoothScrollTo(0, 0);
-                    child.requestFocus();
-                    return true;
-                }
+            View child = mBinding.keyboard.getChildAt(0);
+            if (child != null) {
+                child.requestFocus();
+                return true;
             }
             return true;
         }
@@ -416,9 +419,12 @@ public class SearchActivity extends BaseActivity implements WordAdapter.OnClickL
     }
 
     private boolean handleRecordKey(KeyEvent event, View item) {
-        if (KeyUtil.isRightKey(event)) return isLastInRow(mBinding.recordRecycler, item);
+        if (KeyUtil.isRightKey(event) && isLastInRow(mBinding.recordRecycler, item)) {
+            View child = mBinding.keyboard.getChildAt(0);
+            return child == null || child.requestFocus();
+        }
+        if (KeyUtil.isRightKey(event)) return false;
         if (KeyUtil.isUpKey(event)) return isFirstRow(mBinding.recordRecycler, item);
-        if (KeyUtil.isDownKey(event) && isLastRow(mBinding.recordRecycler, item)) return focusFirstWord();
         return false;
     }
 
