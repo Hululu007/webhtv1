@@ -213,7 +213,6 @@ public class ControlDialog extends BaseBottomSheetDialog implements ParseAdapter
     }
 
     private void applySpeed(float speed) {
-        PlayerSetting.putDefaultSpeed(speed);
         parent.control.action.speed.setText(player.setSpeed(speed));
         setSpeedPresets();
         binding.speed.setValue(Math.max(player.getSpeed(), 0.5f));
