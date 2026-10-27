@@ -1368,6 +1368,15 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
 
     private void setPlayer(Result result) {
         if (isFinishing() || isDestroyed()) return;
+        // PUSH_HANDOFF_SILENT: push:// 已切到 push_agent，忽略空地址结果，避免失败页盖住推送
+        try {
+            if (com.fongmi.android.tv.player.extractor.Push.isHandoff()) {
+                if (result == null || result.hasMsg() || result.getRealUrl() == null || result.getRealUrl().isEmpty()) {
+                    return;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
         if (service() == null) {
             mPendingPlayerResult = result;
             return;
@@ -5757,20 +5766,16 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         setTitleVisible();
     }
 
-    // PUSH_HANDOFF_FAST: push:// 已跳转新页，当前页静默结束，不走失败重试长等待
-    private boolean consumePushHandoffError(String msg) {
-        if (msg == null) return false;
-        if (!msg.contains("push-handoff")) return false;
-        try {
-            finish();
-        } catch (Throwable ignored) {
-        }
-        return true;
-    }
-
     @Override
     protected void onError(String msg) {
-        if (consumePushHandoffError(msg)) return;
+        try {
+            if (com.fongmi.android.tv.player.extractor.Push.isHandoff()) {
+                com.fongmi.android.tv.player.extractor.Push.consumeHandoff();
+                try { if (service() != null) { player().reset(); player().stop(); } } catch (Throwable ignored) {}
+                return;
+            }
+        } catch (Throwable ignored) {
+        }
         recordPlayHealth(false, msg);
         mBinding.swipeLayout.setEnabled(true);
         Track.delete(player().getKey());

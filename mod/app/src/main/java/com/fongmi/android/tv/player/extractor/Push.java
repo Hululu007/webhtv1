@@ -1,22 +1,35 @@
 package com.fongmi.android.tv.player.extractor;
 
-import android.app.Activity;
 import android.net.Uri;
+import android.os.SystemClock;
 
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.player.Source;
 import com.fongmi.android.tv.ui.activity.VideoActivity;
 import com.fongmi.android.tv.utils.UrlUtil;
 
-import java.io.IOException;
-
 /**
- * push:// 资源：立即交给 VideoActivity（push_agent）播放。
- * 不再 sleep + 返回空串，避免当前页空地址拖到 TIMEOUT_PLAY（约 15s）才显示「播放地址加载失败」。
+ * 对齐默壳/上游：start 推送页 + 短暂等待 + 返回空串。
+ * 额外：handoff 标记，让 setPlayer/onError 跳过「播放地址加载失败」与 startFlow 长重试，
+ * 避免空地址把已切入的 push_agent 播放冲掉。
  */
 public class Push implements Source.Extractor {
 
-    public static final String HANDOFF = "push-handoff";
+    private static volatile long sHandoffUntilMs;
+
+    public static void markHandoff() {
+        sHandoffUntilMs = SystemClock.uptimeMillis() + 4000;
+    }
+
+    public static boolean isHandoff() {
+        return SystemClock.uptimeMillis() < sHandoffUntilMs;
+    }
+
+    public static boolean consumeHandoff() {
+        if (!isHandoff()) return false;
+        sHandoffUntilMs = 0;
+        return true;
+    }
 
     @Override
     public boolean match(Uri uri) {
@@ -25,16 +38,14 @@ public class Push implements Source.Extractor {
 
     @Override
     public String fetch(String url) throws Exception {
-        final String target = url != null && url.startsWith("push://") ? url.substring(7) : (url == null ? "" : url);
-        App.post(() -> {
-            try {
-                Activity a = App.activity();
-                if (a == null) return;
-                VideoActivity.start(a, target);
-            } catch (Throwable ignored) {
-            }
-        });
-        throw new IOException(HANDOFF);
+        String target = url != null && url.length() > 7 ? url.substring(7) : "";
+        markHandoff();
+        if (App.activity() != null) {
+            VideoActivity.start(App.activity(), target);
+        }
+        // 默壳为 500ms；略缩短，给 singleTop onNewIntent 时间切到 push_agent
+        SystemClock.sleep(200);
+        return "";
     }
 
     @Override

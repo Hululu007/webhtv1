@@ -567,6 +567,15 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
         if (TextUtils.isEmpty(id) || id.equals(oldId)) return;
         saveHistory();
         getIntent().putExtras(intent);
+        // PUSH_TV_NEWINTENT_FIX
+        detailRequested = false;
+        try {
+            if (service() != null) {
+                player().reset();
+                player().stop();
+            }
+        } catch (Throwable ignored) {
+        }
         checkId();
     }
 
@@ -1301,6 +1310,15 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
 
     private void setPlayer(Result result) {
         if (isFinishing() || isDestroyed()) return;
+        // PUSH_HANDOFF_SILENT: push:// 已切到 push_agent，忽略空地址结果
+        try {
+            if (com.fongmi.android.tv.player.extractor.Push.isHandoff()) {
+                if (result == null || result.hasMsg() || result.getRealUrl() == null || result.getRealUrl().isEmpty()) {
+                    return;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
         SpiderDebug.log("video-flow", "player finish cost=%dms useParse=%s multi=%s msg=%s", System.currentTimeMillis() - playerStartTime, result.shouldUseParse(), result.getUrl().isMulti(), result.getMsg());
         if (service() == null) {
             mPendingPlayer = result;
@@ -5606,20 +5624,16 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
         setTitleVisible();
     }
 
-    // PUSH_HANDOFF_FAST: push:// 已跳转新页，当前页静默结束，不走失败重试长等待
-    private boolean consumePushHandoffError(String msg) {
-        if (msg == null) return false;
-        if (!msg.contains("push-handoff")) return false;
-        try {
-            finish();
-        } catch (Throwable ignored) {
-        }
-        return true;
-    }
-
     @Override
     protected void onError(String msg) {
-        if (consumePushHandoffError(msg)) return;
+        try {
+            if (com.fongmi.android.tv.player.extractor.Push.isHandoff()) {
+                com.fongmi.android.tv.player.extractor.Push.consumeHandoff();
+                try { if (service() != null) { player().reset(); player().stop(); } } catch (Throwable ignored) {}
+                return;
+            }
+        } catch (Throwable ignored) {
+        }
         recordPlayHealth(false, msg);
         Track.delete(player().getKey());
         mClock.setCallback(null);

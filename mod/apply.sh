@@ -235,3 +235,7 @@ echo "[mod] done"
 if [[ -f "$MOD/hooks/inject_stalled_auto_change.py" ]]; then
   python3 "$MOD/hooks/inject_stalled_auto_change.py" "$ROOT"
 fi
+
+if [[ -f "$MOD/hooks/inject_push_fast_handoff.py" ]]; then
+  python3 "$MOD/hooks/inject_push_fast_handoff.py" "$ROOT"
+fi

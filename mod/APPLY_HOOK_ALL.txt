@@ -14,3 +14,4 @@ if [[ -f "$MOD/hooks/inject_player_buttons_fix.py" ]]; then
 fi
 
 inject_player_buttons_fix 同时处理 leanback + mobile。
+inject_push_fast_handoff.py
