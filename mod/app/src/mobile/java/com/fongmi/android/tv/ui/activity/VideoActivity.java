@@ -1285,6 +1285,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
             return;
         }
         if (tryDrillPanFolder(item, null)) return;
+        maybeStartPanPreferSearch(item);
         item.checkPic(getPic());
         item.checkName(getName());
         item.checkContent(getContent());
@@ -5756,8 +5757,20 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         setTitleVisible();
     }
 
+    // PUSH_HANDOFF_FAST: push:// 已跳转新页，当前页静默结束，不走失败重试长等待
+    private boolean consumePushHandoffError(String msg) {
+        if (msg == null) return false;
+        if (!msg.contains("push-handoff")) return false;
+        try {
+            finish();
+        } catch (Throwable ignored) {
+        }
+        return true;
+    }
+
     @Override
     protected void onError(String msg) {
+        if (consumePushHandoffError(msg)) return;
         recordPlayHealth(false, msg);
         mBinding.swipeLayout.setEnabled(true);
         Track.delete(player().getKey());
@@ -6095,12 +6108,40 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         else nextFlag(position);
     }
 
+    
+    // PLAY_DIRECT_PAN_STRENGTHEN: 非网盘详情成功后，主动搜网盘源并在命中时 nextSite
+    private boolean mPanPreferSearchStarted = false;
+
+    private void maybeStartPanPreferSearch(Vod item) {
+        try {
+            if (mPanPreferSearchStarted) return;
+            if (!com.fongmi.android.tv.setting.Setting.isPlayDirectPanPrefer()) return;
+            if (item != null && com.fongmi.android.tv.utils.PanSiteHelper.isPanVod(item)) return;
+            Site cur = getSite();
+            if (cur != null && com.fongmi.android.tv.utils.PanSiteHelper.isPanSite(cur)) return;
+            String name = mBinding.name.getText() != null ? mBinding.name.getText().toString() : "";
+            if (name == null || name.trim().isEmpty()) {
+                if (item != null) name = item.getName();
+            }
+            if (name == null || name.trim().isEmpty()) return;
+            mPanPreferSearchStarted = true;
+            initSearch(name.trim(), true);
+        } catch (Throwable ignored) {
+        }
+    }
+
     private void checkSearch(boolean force) {
         boolean msearch = getId() != null && getId().startsWith("msearch:")
                 && com.fongmi.android.tv.setting.Setting.isPlayDirect();
-        if (!force && !msearch && !PlayerSetting.isAutoChange()) return;
+        boolean panPrefer = false;
+        try {
+            panPrefer = com.fongmi.android.tv.setting.Setting.isPlayDirectPanPrefer();
+        } catch (Throwable ignored) {
+        }
+        // PLAY_DIRECT_PAN_STRENGTHEN
+        if (!force && !msearch && !panPrefer && !PlayerSetting.isAutoChange()) return;
         if (mQuickAdapter.isEmpty()) initSearch(mBinding.name.getText().toString(), true);
-        else if (isAutoMode() || force || msearch) nextSite();
+        else if (isAutoMode() || force || msearch || panPrefer) nextSite();
     }
 
     private void initSearch(String keyword, boolean auto) {
@@ -6111,7 +6152,16 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     }
 
     private boolean isPass(Site item) {
-        if (isAutoMode() && !item.isChangeable()) return false;
+        // PLAY_DIRECT_PAN_STRENGTHEN: 网盘优先时，即使 changeable=0 也允许进搜源列表
+        if (isAutoMode() && !item.isChangeable()) {
+            try {
+                if (com.fongmi.android.tv.setting.Setting.isPlayDirectPanPrefer()
+                        && com.fongmi.android.tv.utils.PanSiteHelper.isPanSite(item)
+                        && item.isSearchable()) return true;
+            } catch (Throwable ignored) {
+            }
+            return false;
+        }
         return item.isSearchable();
     }
 
@@ -6123,14 +6173,45 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         List<Site> sites = new ArrayList<>();
         for (Site item : VodConfig.get().getSites()) if (isPass(item)) sites.add(item);
         SiteHealthStore.sortSites(sites);
-        // 仅播放直达(msearch)：随机最多 N 站；普通搜索不截断
-        boolean limitDirect = (getId() != null && getId().startsWith("msearch:"))
-                || (isAutoMode() && com.fongmi.android.tv.setting.Setting.isPlayDirect());
-        if (limitDirect) {
-            int lim = com.fongmi.android.tv.setting.Setting.getPlayDirectSearchLimit();
-            if (lim > 0 && sites.size() > lim) {
-                java.util.Collections.shuffle(sites);
-                sites = new java.util.ArrayList<>(sites.subList(0, lim));
+        boolean panPrefer = false;
+        try {
+            panPrefer = com.fongmi.android.tv.setting.Setting.isPlayDirectPanPrefer();
+        } catch (Throwable ignored) {
+        }
+        // PLAY_DIRECT_PAN_STRENGTHEN: 网盘优先 — 网盘站全量前置，截断时绝不丢掉网盘
+        if (panPrefer && !sites.isEmpty()) {
+            java.util.ArrayList<Site> pan = new java.util.ArrayList<>();
+            java.util.ArrayList<Site> other = new java.util.ArrayList<>();
+            for (Site s : sites) {
+                if (com.fongmi.android.tv.utils.PanSiteHelper.isPanSite(s)) pan.add(s);
+                else other.add(s);
+            }
+            boolean limitDirect = (getId() != null && getId().startsWith("msearch:"))
+                    || (isAutoMode() && com.fongmi.android.tv.setting.Setting.isPlayDirect())
+                    || isAutoMode();
+            if (limitDirect) {
+                int lim = com.fongmi.android.tv.setting.Setting.getPlayDirectSearchLimit();
+                if (lim <= 0) lim = 10;
+                // 网盘全部保留；其余名额给非网盘
+                int rest = Math.max(0, lim - pan.size());
+                if (other.size() > rest) {
+                    java.util.Collections.shuffle(other);
+                    other = new java.util.ArrayList<>(other.subList(0, rest));
+                }
+            }
+            sites = new java.util.ArrayList<>(pan.size() + other.size());
+            sites.addAll(pan);
+            sites.addAll(other);
+        } else {
+            // 仅播放直达(msearch)：随机最多 N 站；普通搜索不截断
+            boolean limitDirect = (getId() != null && getId().startsWith("msearch:"))
+                    || (isAutoMode() && com.fongmi.android.tv.setting.Setting.isPlayDirect());
+            if (limitDirect) {
+                int lim = com.fongmi.android.tv.setting.Setting.getPlayDirectSearchLimit();
+                if (lim > 0 && sites.size() > lim) {
+                    java.util.Collections.shuffle(sites);
+                    sites = new java.util.ArrayList<>(sites.subList(0, lim));
+                }
             }
         }
         mViewModel.searchContent(sites, keyword, true);
@@ -6143,7 +6224,13 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         mQuickAdapter.addAll(items);
         if (isQuickSearchVisible()) mQuickSearchDialog.addAll(items);
         if (revealManualSearch && !items.isEmpty()) revealManualSearch = false;
-        if (isInitAuto() && (PlayerSetting.isAutoChange() || ((getId() != null && getId().startsWith("msearch:")) && com.fongmi.android.tv.setting.Setting.isPlayDirect()))) nextSite();
+        // PLAY_DIRECT_PAN_STRENGTHEN
+        boolean panPreferGo = false;
+        try {
+            panPreferGo = com.fongmi.android.tv.setting.Setting.isPlayDirectPanPrefer();
+        } catch (Throwable ignored) {
+        }
+        if (isInitAuto() && (PlayerSetting.isAutoChange() || panPreferGo || ((getId() != null && getId().startsWith("msearch:")) && com.fongmi.android.tv.setting.Setting.isPlayDirect()))) nextSite();
         if (items.isEmpty()) return;
         App.removeCallbacks(mR4);
     }
