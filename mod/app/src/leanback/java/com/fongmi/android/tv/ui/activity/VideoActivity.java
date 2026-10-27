@@ -1079,8 +1079,10 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
 
     private boolean hasPlayableEpisode(Vod item) {
         if (item == null || item.getFlags() == null) return false;
-        for (Flag f : item.getFlags()) {
-            if (f != null && f.getEpisodes() != null && !f.getEpisodes().isEmpty()) return true;
+        for (Object o : item.getFlags()) {
+            if (!(o instanceof Flag)) continue;
+            Flag f = (Flag) o;
+            if (f.getEpisodes() != null && !f.getEpisodes().isEmpty()) return true;
         }
         return false;
     }
