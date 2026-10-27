@@ -399,4 +399,13 @@ public class SettingPersonalActivity extends BaseActivity {
         try { com.fongmi.android.tv.subtitle.AssrtSubtitleMatch.notifySubtitleStyleChanged(); } catch (Throwable ignored) {}
         try { com.fongmi.android.tv.player.exo.ExoUtil.reapplySubtitleStyle(); } catch (Throwable ignored) {}
     }
+
+    private void setPlaybackScreenshotBtn(View view) {
+        try {
+            Setting.putPlaybackScreenshotBtn(!Setting.isPlaybackScreenshotBtn());
+            mBinding.playbackScreenshotBtnText.setText(getSwitch(Setting.isPlaybackScreenshotBtn()));
+        } catch (Throwable ignored) {
+        }
+    }
+
 }
