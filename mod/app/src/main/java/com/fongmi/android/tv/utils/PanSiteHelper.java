@@ -13,10 +13,11 @@ import java.util.Locale;
 public final class PanSiteHelper {
 
     private static final String[] PAN_KEYS = {
-            "网盘", "云盘", "阿里", "夸克", "百度", "迅雷", "uc盘", "uc网盘",
+            "网盘", "云盘", "阿里", "夸克", "百度", "迅雷", "uc盘", "uc网盘", "UC",
             "天翼", "115", "123盘", "123云", "pikpak", "alist", "openlist",
             "pan", "alipan", "aliyun", "quark", "baidu", "xunlei", "thunder",
-            "觅盘", "盘搜", "seed", "推送"
+            "觅盘", "盘搜", "seed", "推送", "magnet", "磁力", "网盘搜", "云盘搜",
+            "九七", "soai", "csp_soai", "yiso", "易搜", "盘搜搜"
     };
 
     private static final String[] MUSIC_KEYS = {
