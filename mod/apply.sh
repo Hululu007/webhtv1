@@ -239,3 +239,7 @@ fi
 if [[ -f "$MOD/hooks/inject_push_fast_handoff.py" ]]; then
   python3 "$MOD/hooks/inject_push_fast_handoff.py" "$ROOT"
 fi
+
+if [[ -f "$MOD/hooks/inject_playback_screenshot.py" ]]; then
+  python3 "$MOD/hooks/inject_playback_screenshot.py" "$ROOT"
+fi

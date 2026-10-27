@@ -853,6 +853,15 @@ public class Setting {
         Prefers.put("hide_home_type_more", value);
     }
 
+    /** 播放控制栏截图按键（默认开） */
+    public static boolean isPlaybackScreenshotBtn() {
+        return Prefers.getBoolean("playback_screenshot_btn", true);
+    }
+
+    public static void putPlaybackScreenshotBtn(boolean value) {
+        Prefers.put("playback_screenshot_btn", value);
+    }
+
 
 
     public static boolean isHomeVodAutoLoad() {
