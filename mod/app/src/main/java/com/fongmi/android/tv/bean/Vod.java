@@ -292,7 +292,19 @@ public class Vod implements Parcelable, Diffable<Vod> {
     }
 
     public Vod setFlags() {
-        normalizeVodFlags();
+        // FLAG_SANITIZE: 若 vodFlags 被 Gson 解成 String/Map 等非 Flag，清空后走 play_from/play_url 重建
+        // （对齐默壳：最终线路必须带剧集 URL，禁止无 URL 的 Flag.create(name)）
+        if (vodFlags != null && !vodFlags.isEmpty()) {
+            boolean dirty = false;
+            try {
+                for (Object o : (java.util.List) vodFlags) {
+                    if (!(o instanceof Flag)) { dirty = true; break; }
+                }
+            } catch (Throwable e) {
+                dirty = true;
+            }
+            if (dirty) vodFlags = new java.util.ArrayList<>();
+        }
         String[] playUrls = getPlayUrl().split("\\$\\$\\$");
         String[] playFlags = getPlayFrom().split("\\$\\$\\$");
         if (!getFlags().isEmpty()) {
@@ -303,39 +315,6 @@ public class Vod implements Parcelable, Diffable<Vod> {
             IntStream.range(0, playFlags.length).filter(i -> !playFlags[i].trim().isEmpty() && i < playUrls.length && !TextUtils.isEmpty(playUrls[i])).mapToObj(i -> Flag.create(playFlags[i].trim(), playUrls[i])).forEach(getFlags()::add);
         }
         return this;
-    }
-
-    /** 部分源把 vodFlags 解成 String/Map，统一成 Flag，避免 FlagAdapter ClassCastException */
-    @SuppressWarnings({"rawtypes", "unchecked"})
-    private void normalizeVodFlags() {
-        if (vodFlags == null || vodFlags.isEmpty()) return;
-        boolean dirty = false;
-        for (Object o : (List) vodFlags) {
-            if (!(o instanceof Flag)) { dirty = true; break; }
-        }
-        if (!dirty) return;
-        List<Flag> out = new ArrayList<>();
-        for (Object o : (List) vodFlags) {
-            if (o == null) continue;
-            if (o instanceof Flag) out.add((Flag) o);
-            else if (o instanceof String) {
-                String s = ((String) o).trim();
-                if (!s.isEmpty()) out.add(Flag.create(s));
-            } else if (o instanceof java.util.Map) {
-                try {
-                    java.util.Map map = (java.util.Map) o;
-                    Object name = map.get("flag");
-                    if (name == null) name = map.get("name");
-                    if (name == null) name = map.get("show");
-                    if (name != null) {
-                        String s = String.valueOf(name).trim();
-                        if (!s.isEmpty()) out.add(Flag.create(s));
-                    }
-                } catch (Throwable ignored) {
-                }
-            }
-        }
-        vodFlags = out;
     }
 
     public Vod trans() {
