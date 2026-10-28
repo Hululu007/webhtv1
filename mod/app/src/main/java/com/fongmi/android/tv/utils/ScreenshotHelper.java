@@ -59,6 +59,14 @@ public final class ScreenshotHelper {
     }
 
     public static void capture(@Nullable Activity activity, @Nullable PlayerView playerView, @Nullable Callback callback) {
+        // 未显式指定时：runtime 探测（可能不准）
+        capture(activity, playerView, isTelevision(activity), callback);
+    }
+
+    /**
+     * @param forceTv true=TV 1930 策略（由 leanback VideoActivity 传入）；false=手机最高分辨率
+     */
+    public static void capture(@Nullable Activity activity, @Nullable PlayerView playerView, boolean forceTv, @Nullable Callback callback) {
         Handler main = new Handler(Looper.getMainLooper());
         if (activity == null || activity.isFinishing() || playerView == null) {
             fail(main, callback, R.string.screenshot_unavailable);
@@ -69,7 +77,7 @@ public final class ScreenshotHelper {
             fail(main, callback, R.string.screenshot_unavailable);
             return;
         }
-        final boolean tv = isTelevision(activity);
+        final boolean tv = forceTv;
         surfaceView.post(() -> captureView(activity, surfaceView, tv, main, callback));
     }
 
