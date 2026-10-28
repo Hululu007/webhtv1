@@ -5639,9 +5639,16 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
         }
     }
 
+
     private void onScreenshot() {
         try {
-            com.fongmi.android.tv.utils.TvScreenshot.capture(this, getExoView(),
+            final androidx.media3.ui.PlayerView exo = getExoView();
+            if (exo == null) {
+                com.fongmi.android.tv.utils.Notify.show(getString(com.fongmi.android.tv.R.string.screenshot_fail));
+                return;
+            }
+            // 1) 先走 Surface（1920）
+            com.fongmi.android.tv.utils.TvScreenshot.capture(this, exo,
                 new com.fongmi.android.tv.utils.TvScreenshot.Callback() {
                     @Override
                     public void onSuccess(android.net.Uri uri) {
@@ -5649,16 +5656,47 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
                     }
                     @Override
                     public void onError(String message) {
-                        try {
-                            com.fongmi.android.tv.utils.Notify.show(message == null || message.isEmpty()
-                                ? getString(com.fongmi.android.tv.R.string.screenshot_fail) : message);
-                        } catch (Throwable ignored) {}
+                        // 2) Surface 花屏/失败 → 短暂切 TextureView 再截，截完恢复
+                        trySwitchTextureAndCapture(exo);
                     }
                 });
         } catch (Throwable e) {
             try { com.fongmi.android.tv.utils.Notify.show(getString(com.fongmi.android.tv.R.string.screenshot_fail)); } catch (Throwable ignored) {}
         }
     }
+
+    private void trySwitchTextureAndCapture(final androidx.media3.ui.PlayerView exo) {
+        final int surface = com.fongmi.android.tv.setting.PlayerSetting.RENDER_SURFACE;
+        final int texture = com.fongmi.android.tv.setting.PlayerSetting.RENDER_TEXTURE;
+        try {
+            exo.setRender(texture);
+        } catch (Throwable e) {
+            try { com.fongmi.android.tv.utils.Notify.show(getString(com.fongmi.android.tv.R.string.screenshot_fail)); } catch (Throwable ignored) {}
+            return;
+        }
+        exo.postDelayed(() -> {
+            com.fongmi.android.tv.utils.TvScreenshot.capture(this, exo,
+                new com.fongmi.android.tv.utils.TvScreenshot.Callback() {
+                    private void restore() {
+                        try { exo.setRender(surface); } catch (Throwable ignored) {}
+                    }
+                    @Override
+                    public void onSuccess(android.net.Uri uri) {
+                        restore();
+                        try { com.fongmi.android.tv.utils.Notify.show(getString(com.fongmi.android.tv.R.string.screenshot_ok)); } catch (Throwable ignored) {}
+                    }
+                    @Override
+                    public void onError(String message) {
+                        restore();
+                        try {
+                            com.fongmi.android.tv.utils.Notify.show(message == null || message.isEmpty()
+                                ? getString(com.fongmi.android.tv.R.string.screenshot_fail) : message);
+                        } catch (Throwable ignored) {}
+                    }
+                });
+        }, 500);
+    }
+
 
     @Override
     protected void onError(String msg) {
