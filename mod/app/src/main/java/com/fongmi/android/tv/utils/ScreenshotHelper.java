@@ -38,13 +38,16 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * 只截视频 surface，不含状态栏/控制栏。
  * <p>
- * 手机：优先 surface 显示原尺寸（最高可用）。
- * TV：固定约 1920 长边档（稳定优先），失败再 1280。
+ * 不用 Window 合成截图。
+ * TV：与 20261028-1930 完全相同 —— 长边 ≤1920，失败再 1280。
+ * 手机：优先 surface 最高显示分辨率（上限 4096）。
  */
 public final class ScreenshotHelper {
 
-    private static final int HARD_CAP = 4096;
-    private static final int TV_EDGE = 1920;
+    /** TV：与 20261028-1930 版一致 */
+    private static final int TV_MAX_EDGE = 1920;
+    /** 手机：尽量用 surface 原始显示分辨率 */
+    private static final int PHONE_MAX_EDGE = 4096;
 
     public interface Callback {
         void onSuccess(Uri uri);
@@ -66,7 +69,7 @@ public final class ScreenshotHelper {
             fail(main, callback, R.string.screenshot_unavailable);
             return;
         }
-        boolean tv = isTelevision(activity);
+        final boolean tv = isTelevision(activity);
         surfaceView.post(() -> captureView(activity, surfaceView, tv, main, callback));
     }
 
@@ -101,7 +104,7 @@ public final class ScreenshotHelper {
                         } catch (Throwable ignored) {
                         }
                     }
-                    if (isBadFrame(out)) {
+                    if (isMostlyBlack(out) || isLikelyGarbage(out)) {
                         try {
                             out.recycle();
                         } catch (Throwable ignored) {
@@ -146,25 +149,27 @@ public final class ScreenshotHelper {
         tryPixelCopyChain(activity, surfaceView, surface, tries, 0, main, callback);
     }
 
-    /** 手机：原尺寸 → 逐步缩小。TV：仅 1920 → 1280。 */
     private static int[][] buildTrySizes(int srcW, int srcH, boolean tv) {
-        LinkedHashSet<String> seen = new LinkedHashSet<>();
-        ArrayList<int[]> list = new ArrayList<>();
+        // TV：完全沿用 1930 —— 长边 ≤1920，失败再 1280
         if (tv) {
-            addSize(list, seen, fitSize(srcW, srcH, TV_EDGE));
-            addSize(list, seen, fitSize(srcW, srcH, 1280));
-        } else {
-            addSize(list, seen, fitSize(srcW, srcH, HARD_CAP));
-            for (int edge : new int[]{3840, 2560, 1920, 1280}) {
-                addSize(list, seen, fitSize(srcW, srcH, edge));
+            int[] full = fitSize(srcW, srcH, TV_MAX_EDGE);
+            int[] half = fitSize(srcW, srcH, Math.min(TV_MAX_EDGE, 1280));
+            if (full[0] == half[0] && full[1] == half[1]) {
+                return new int[][]{full};
             }
+            return new int[][]{full, half};
+        }
+        // 手机：优先最高显示分辨率
+        int[] full = fitSize(srcW, srcH, PHONE_MAX_EDGE);
+        int[] mid = fitSize(srcW, srcH, 2560);
+        int[] half = fitSize(srcW, srcH, 1920);
+        ArrayList<int[]> list = new ArrayList<>();
+        LinkedHashSet<String> seen = new LinkedHashSet<>();
+        for (int[] s : new int[][]{full, mid, half}) {
+            String k = s[0] + "x" + s[1];
+            if (seen.add(k)) list.add(s);
         }
         return list.toArray(new int[0][]);
-    }
-
-    private static void addSize(ArrayList<int[]> list, LinkedHashSet<String> seen, int[] s) {
-        String key = s[0] + "x" + s[1];
-        if (seen.add(key)) list.add(s);
     }
 
     private static void tryPixelCopyChain(
@@ -192,7 +197,9 @@ public final class ScreenshotHelper {
         AtomicBoolean done = new AtomicBoolean(false);
         PixelCopy.OnPixelCopyFinishedListener listener = copyResult -> {
             if (!done.compareAndSet(false, true)) return;
-            if (copyResult != PixelCopy.SUCCESS || isBadFrame(bitmap)) {
+            if (copyResult != PixelCopy.SUCCESS
+                    || isLikelyGarbage(bitmap)
+                    || isMostlyBlack(bitmap)) {
                 try {
                     bitmap.recycle();
                 } catch (Throwable ignored) {
@@ -204,7 +211,11 @@ public final class ScreenshotHelper {
         };
 
         try {
-            PixelCopy.request(surface, bitmap, listener, main);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                PixelCopy.request(surface, bitmap, listener, main);
+            } else {
+                PixelCopy.request(surfaceView, bitmap, listener, main);
+            }
         } catch (Throwable e) {
             try {
                 PixelCopy.request(surfaceView, bitmap, listener, main);
@@ -227,7 +238,7 @@ public final class ScreenshotHelper {
     }
 
     private static Bitmap maybeDownscale(Bitmap src, boolean tv) {
-        int cap = tv ? TV_EDGE : HARD_CAP;
+        int cap = tv ? TV_MAX_EDGE : PHONE_MAX_EDGE;
         int max = Math.max(src.getWidth(), src.getHeight());
         if (max <= cap) return src;
         int[] s = fitSize(src.getWidth(), src.getHeight(), cap);
@@ -238,20 +249,18 @@ public final class ScreenshotHelper {
         }
     }
 
-    private static boolean isBadFrame(Bitmap bitmap) {
-        return isMostlyBlack(bitmap) || isLikelyGarbage(bitmap);
-    }
-
     private static boolean isMostlyBlack(Bitmap bitmap) {
         if (bitmap == null || bitmap.isRecycled()) return true;
         try {
             int w = bitmap.getWidth();
             int h = bitmap.getHeight();
             if (w < 4 || h < 4) return true;
+            int[] xs = {w / 5, w / 2, 4 * w / 5};
+            int[] ys = {h / 5, h / 2, 4 * h / 5};
             int dark = 0, total = 0;
-            for (int yi = 1; yi <= 4; yi++) {
-                for (int xi = 1; xi <= 4; xi++) {
-                    int c = bitmap.getPixel(w * xi / 5, h * yi / 5);
+            for (int y : ys) {
+                for (int x : xs) {
+                    int c = bitmap.getPixel(x, y);
                     int r = (c >> 16) & 0xff;
                     int g = (c >> 8) & 0xff;
                     int b = c & 0xff;
@@ -271,28 +280,20 @@ public final class ScreenshotHelper {
             int w = bitmap.getWidth();
             int h = bitmap.getHeight();
             if (w < 8 || h < 8) return true;
-            int greenish = 0, wild = 0, total = 0;
-            int prev = -1;
-            for (int yi = 1; yi <= 4; yi++) {
-                for (int xi = 1; xi <= 4; xi++) {
-                    int c = bitmap.getPixel(w * xi / 5, h * yi / 5);
+            int[] xs = {w / 4, w / 2, 3 * w / 4};
+            int[] ys = {h / 4, h / 2, 3 * h / 4};
+            int greenish = 0, total = 0;
+            for (int y : ys) {
+                for (int x : xs) {
+                    int c = bitmap.getPixel(x, y);
                     int r = (c >> 16) & 0xff;
                     int g = (c >> 8) & 0xff;
                     int b = c & 0xff;
                     total++;
-                    if (g > 160 && g > r + 35 && g > b + 35) greenish++;
-                    if (r > 140 && b > 140 && g < 100) wild++;
-                    if (prev >= 0) {
-                        int pr = (prev >> 16) & 0xff;
-                        int pg = (prev >> 8) & 0xff;
-                        int pb = prev & 0xff;
-                        if (Math.abs(r - pr) + Math.abs(g - pg) + Math.abs(b - pb) > 280) wild++;
-                    }
-                    prev = c;
+                    if (g > 180 && g > r + 40 && g > b + 40) greenish++;
                 }
             }
-            if (total == 0) return true;
-            return greenish * 2 >= total || wild * 2 >= total;
+            return total > 0 && greenish * 2 >= total;
         } catch (Throwable e) {
             return false;
         }

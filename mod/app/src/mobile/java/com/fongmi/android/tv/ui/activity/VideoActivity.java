@@ -5781,8 +5781,6 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
         }
     }
 
-
-
     private void onScreenshot() {
         try {
             com.fongmi.android.tv.utils.ScreenshotHelper.capture(this, getExoView(),
@@ -5803,8 +5801,6 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
             try { com.fongmi.android.tv.utils.Notify.show(getString(com.fongmi.android.tv.R.string.screenshot_fail)); } catch (Throwable ignored) {}
         }
     }
-
-
 
     @Override
     protected void onError(String msg) {
