@@ -38,12 +38,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * 只截视频 surface，不含状态栏/控制栏。
  * <p>
- * 手机：优先 surface 显示尺寸（可到 2K+）。
- * TV：4K Surface 直接 PixelCopy 常花屏，优先 1920/1280，再尝试更高；不做 Window 截图（会黑屏带状态栏）。
+ * 手机：优先 surface 显示原尺寸（最高可用）。
+ * TV：固定约 1920 长边档（稳定优先），失败再 1280。
  */
 public final class ScreenshotHelper {
 
     private static final int HARD_CAP = 4096;
+    private static final int TV_EDGE = 1920;
 
     public interface Callback {
         void onSuccess(Uri uri);
@@ -145,25 +146,18 @@ public final class ScreenshotHelper {
         tryPixelCopyChain(activity, surfaceView, surface, tries, 0, main, callback);
     }
 
-    /**
-     * 手机：原尺寸 → 逐步缩小。
-     * TV：1920 → 1280 → 960 优先（躲开 4K overlay 花屏）；再试 2560（少数机型可用）。
-     */
+    /** 手机：原尺寸 → 逐步缩小。TV：仅 1920 → 1280。 */
     private static int[][] buildTrySizes(int srcW, int srcH, boolean tv) {
         LinkedHashSet<String> seen = new LinkedHashSet<>();
         ArrayList<int[]> list = new ArrayList<>();
-        int[] edges;
         if (tv) {
-            edges = new int[]{1920, 1280, 960, 2560};
+            addSize(list, seen, fitSize(srcW, srcH, TV_EDGE));
+            addSize(list, seen, fitSize(srcW, srcH, 1280));
         } else {
-            edges = new int[]{HARD_CAP, 3840, 2560, 1920, 1280};
-        }
-        if (!tv) {
-            int[] nativeSize = fitSize(srcW, srcH, HARD_CAP);
-            addSize(list, seen, nativeSize);
-        }
-        for (int edge : edges) {
-            addSize(list, seen, fitSize(srcW, srcH, edge));
+            addSize(list, seen, fitSize(srcW, srcH, HARD_CAP));
+            for (int edge : new int[]{3840, 2560, 1920, 1280}) {
+                addSize(list, seen, fitSize(srcW, srcH, edge));
+            }
         }
         return list.toArray(new int[0][]);
     }
@@ -233,7 +227,7 @@ public final class ScreenshotHelper {
     }
 
     private static Bitmap maybeDownscale(Bitmap src, boolean tv) {
-        int cap = tv ? 1920 : HARD_CAP;
+        int cap = tv ? TV_EDGE : HARD_CAP;
         int max = Math.max(src.getWidth(), src.getHeight());
         if (max <= cap) return src;
         int[] s = fitSize(src.getWidth(), src.getHeight(), cap);
@@ -271,9 +265,6 @@ public final class ScreenshotHelper {
         }
     }
 
-    /**
-     * 花屏：大面积异常绿，或采样点之间反差极大的噪声条带。
-     */
     private static boolean isLikelyGarbage(Bitmap bitmap) {
         if (bitmap == null || bitmap.isRecycled()) return true;
         try {
@@ -290,22 +281,18 @@ public final class ScreenshotHelper {
                     int b = c & 0xff;
                     total++;
                     if (g > 160 && g > r + 35 && g > b + 35) greenish++;
-                    // 品红/脏噪声
                     if (r > 140 && b > 140 && g < 100) wild++;
                     if (prev >= 0) {
                         int pr = (prev >> 16) & 0xff;
                         int pg = (prev >> 8) & 0xff;
                         int pb = prev & 0xff;
-                        int dr = Math.abs(r - pr), dg = Math.abs(g - pg), db = Math.abs(b - pb);
-                        if (dr + dg + db > 280) wild++;
+                        if (Math.abs(r - pr) + Math.abs(g - pg) + Math.abs(b - pb) > 280) wild++;
                     }
                     prev = c;
                 }
             }
             if (total == 0) return true;
-            if (greenish * 2 >= total) return true;
-            if (wild * 2 >= total) return true;
-            return false;
+            return greenish * 2 >= total || wild * 2 >= total;
         } catch (Throwable e) {
             return false;
         }

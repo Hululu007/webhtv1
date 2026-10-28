@@ -5782,65 +5782,8 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
     }
 
 
-    private void onScreenshot() {
-        try {
-            final androidx.media3.ui.PlayerView exo = getExoView();
-            if (exo == null) {
-                com.fongmi.android.tv.utils.Notify.show(getString(com.fongmi.android.tv.R.string.screenshot_unavailable));
-                return;
-            }
-            boolean tv = false;
-            try {
-                android.app.UiModeManager ui = (android.app.UiModeManager) getSystemService(UI_MODE_SERVICE);
-                if (ui != null && ui.getCurrentModeType() == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION) tv = true;
-            } catch (Throwable ignored) {}
-            try {
-                if (getPackageManager().hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK)) tv = true;
-            } catch (Throwable ignored) {}
-            android.view.View surface = exo.getVideoSurfaceView();
-            // TV + SurfaceView：硬件 overlay 上 PixelCopy 常花屏，短暂切 TextureView 只为截图（不改解码设置）
-            if (tv && surface instanceof android.view.SurfaceView) {
-                final int restore = com.fongmi.android.tv.setting.PlayerSetting.RENDER_SURFACE;
-                try {
-                    exo.setRender(com.fongmi.android.tv.setting.PlayerSetting.RENDER_TEXTURE);
-                } catch (Throwable e) {
-                    // 切不过去则仍走 Surface 路径
-                    captureScreenshotNow();
-                    return;
-                }
-                exo.postDelayed(() -> {
-                    com.fongmi.android.tv.utils.ScreenshotHelper.capture(this, exo,
-                        new com.fongmi.android.tv.utils.ScreenshotHelper.Callback() {
-                            private void restoreSurface() {
-                                try {
-                                    exo.setRender(restore);
-                                } catch (Throwable ignored) {
-                                }
-                            }
-                            @Override
-                            public void onSuccess(android.net.Uri uri) {
-                                restoreSurface();
-                                try { com.fongmi.android.tv.utils.Notify.show(getString(com.fongmi.android.tv.R.string.screenshot_ok)); } catch (Throwable ignored) {}
-                            }
-                            @Override
-                            public void onError(String message) {
-                                restoreSurface();
-                                try {
-                                    com.fongmi.android.tv.utils.Notify.show(message == null || message.isEmpty()
-                                        ? getString(com.fongmi.android.tv.R.string.screenshot_fail) : message);
-                                } catch (Throwable ignored) {}
-                            }
-                        });
-                }, 450);
-                return;
-            }
-            captureScreenshotNow();
-        } catch (Throwable e) {
-            try { com.fongmi.android.tv.utils.Notify.show(getString(com.fongmi.android.tv.R.string.screenshot_fail)); } catch (Throwable ignored) {}
-        }
-    }
 
-    private void captureScreenshotNow() {
+    private void onScreenshot() {
         try {
             com.fongmi.android.tv.utils.ScreenshotHelper.capture(this, getExoView(),
                 new com.fongmi.android.tv.utils.ScreenshotHelper.Callback() {
@@ -5860,6 +5803,7 @@ public class VideoActivity extends PlaybackActivity implements Clock.Callback, C
             try { com.fongmi.android.tv.utils.Notify.show(getString(com.fongmi.android.tv.R.string.screenshot_fail)); } catch (Throwable ignored) {}
         }
     }
+
 
 
     @Override
