@@ -1,7 +1,11 @@
 package com.fongmi.android.tv.utils;
 
 import android.app.Activity;
+import android.app.UiModeManager;
 import android.content.ContentValues;
+import android.content.Context;
+import android.content.pm.PackageManager;
+import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Rect;
 import android.net.Uri;
@@ -25,21 +29,21 @@ import com.fongmi.android.tv.R;
 
 import java.io.OutputStream;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 只截视频 surface，不含状态栏/控制栏。
  * <p>
- * 不用 Window 合成截图：硬件 overlay 视频层在 Window 截图里是黑的，还会带上系统栏。
- * SurfaceView 用 PixelCopy(Surface)；优先 surface 原尺寸（最大 4096），失败再 3840→2560→1920→1280。
+ * 手机：优先 surface 显示尺寸（可到 2K+）。
+ * TV：4K Surface 直接 PixelCopy 常花屏，优先 1920/1280，再尝试更高；不做 Window 截图（会黑屏带状态栏）。
  */
 public final class ScreenshotHelper {
 
-    /** 优先原尺寸；仅当过大或失败时再降到这些档位 */
     private static final int HARD_CAP = 4096;
-    private static final int[] FALLBACK_EDGES = {3840, 2560, 1920, 1280};
 
     public interface Callback {
         void onSuccess(Uri uri);
@@ -61,22 +65,42 @@ public final class ScreenshotHelper {
             fail(main, callback, R.string.screenshot_unavailable);
             return;
         }
-        surfaceView.post(() -> captureView(activity, surfaceView, main, callback));
+        boolean tv = isTelevision(activity);
+        surfaceView.post(() -> captureView(activity, surfaceView, tv, main, callback));
     }
 
-    private static void captureView(Activity activity, View view, Handler main, Callback callback) {
+    private static boolean isTelevision(Context context) {
+        try {
+            UiModeManager ui = (UiModeManager) context.getSystemService(Context.UI_MODE_SERVICE);
+            if (ui != null && ui.getCurrentModeType() == Configuration.UI_MODE_TYPE_TELEVISION) {
+                return true;
+            }
+        } catch (Throwable ignored) {
+        }
+        try {
+            PackageManager pm = context.getPackageManager();
+            if (pm.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+                    || pm.hasSystemFeature("android.software.leanback")) {
+                return true;
+            }
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
+    private static void captureView(Activity activity, View view, boolean tv, Handler main, Callback callback) {
         if (view instanceof TextureView textureView) {
             try {
                 Bitmap raw = textureView.getBitmap();
                 if (raw != null && raw.getWidth() > 0 && !raw.isRecycled()) {
-                    Bitmap out = maybeDownscale(raw);
+                    Bitmap out = maybeDownscale(raw, tv);
                     if (out != raw) {
                         try {
                             raw.recycle();
                         } catch (Throwable ignored) {
                         }
                     }
-                    if (isMostlyBlack(out) || isLikelyGarbage(out)) {
+                    if (isBadFrame(out)) {
                         try {
                             out.recycle();
                         } catch (Throwable ignored) {
@@ -117,25 +141,36 @@ public final class ScreenshotHelper {
             return;
         }
 
-        // 尝试顺序：原尺寸（上限 MAX_EDGE）→ 更小一档，避开部分机型缩放 PixelCopy 花屏
-        int[][] tries = buildTrySizes(srcW, srcH);
+        int[][] tries = buildTrySizes(srcW, srcH, tv);
         tryPixelCopyChain(activity, surfaceView, surface, tries, 0, main, callback);
     }
 
-    private static int[][] buildTrySizes(int srcW, int srcH) {
-        java.util.LinkedHashSet<String> seen = new java.util.LinkedHashSet<>();
-        java.util.ArrayList<int[]> list = new java.util.ArrayList<>();
-        // 1) 尽量原尺寸（极端超过 HARD_CAP 才压）
-        int[] nativeSize = fitSize(srcW, srcH, HARD_CAP);
-        list.add(nativeSize);
-        seen.add(nativeSize[0] + "x" + nativeSize[1]);
-        // 2) 逐级缩小，花屏/OOM 时回退
-        for (int edge : FALLBACK_EDGES) {
-            int[] s = fitSize(srcW, srcH, edge);
-            String key = s[0] + "x" + s[1];
-            if (seen.add(key)) list.add(s);
+    /**
+     * 手机：原尺寸 → 逐步缩小。
+     * TV：1920 → 1280 → 960 优先（躲开 4K overlay 花屏）；再试 2560（少数机型可用）。
+     */
+    private static int[][] buildTrySizes(int srcW, int srcH, boolean tv) {
+        LinkedHashSet<String> seen = new LinkedHashSet<>();
+        ArrayList<int[]> list = new ArrayList<>();
+        int[] edges;
+        if (tv) {
+            edges = new int[]{1920, 1280, 960, 2560};
+        } else {
+            edges = new int[]{HARD_CAP, 3840, 2560, 1920, 1280};
+        }
+        if (!tv) {
+            int[] nativeSize = fitSize(srcW, srcH, HARD_CAP);
+            addSize(list, seen, nativeSize);
+        }
+        for (int edge : edges) {
+            addSize(list, seen, fitSize(srcW, srcH, edge));
         }
         return list.toArray(new int[0][]);
+    }
+
+    private static void addSize(ArrayList<int[]> list, LinkedHashSet<String> seen, int[] s) {
+        String key = s[0] + "x" + s[1];
+        if (seen.add(key)) list.add(s);
     }
 
     private static void tryPixelCopyChain(
@@ -163,9 +198,7 @@ public final class ScreenshotHelper {
         AtomicBoolean done = new AtomicBoolean(false);
         PixelCopy.OnPixelCopyFinishedListener listener = copyResult -> {
             if (!done.compareAndSet(false, true)) return;
-            if (copyResult != PixelCopy.SUCCESS
-                    || isLikelyGarbage(bitmap)
-                    || isMostlyBlack(bitmap)) {
+            if (copyResult != PixelCopy.SUCCESS || isBadFrame(bitmap)) {
                 try {
                     bitmap.recycle();
                 } catch (Throwable ignored) {
@@ -177,15 +210,9 @@ public final class ScreenshotHelper {
         };
 
         try {
-            // 优先 Surface（真实视频缓冲）；部分机型 SurfaceView 更稳，失败链会再试尺寸
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                PixelCopy.request(surface, bitmap, listener, main);
-            } else {
-                PixelCopy.request(surfaceView, bitmap, listener, main);
-            }
+            PixelCopy.request(surface, bitmap, listener, main);
         } catch (Throwable e) {
             try {
-                // 回退 SurfaceView 入口
                 PixelCopy.request(surfaceView, bitmap, listener, main);
             } catch (Throwable e2) {
                 try {
@@ -205,10 +232,11 @@ public final class ScreenshotHelper {
         return new int[]{Math.max(1, Math.round(w * scale)), Math.max(1, Math.round(h * scale))};
     }
 
-    private static Bitmap maybeDownscale(Bitmap src) {
+    private static Bitmap maybeDownscale(Bitmap src, boolean tv) {
+        int cap = tv ? 1920 : HARD_CAP;
         int max = Math.max(src.getWidth(), src.getHeight());
-        if (max <= HARD_CAP) return src;
-        int[] s = fitSize(src.getWidth(), src.getHeight(), HARD_CAP);
+        if (max <= cap) return src;
+        int[] s = fitSize(src.getWidth(), src.getHeight(), cap);
         try {
             return Bitmap.createScaledBitmap(src, s[0], s[1], true);
         } catch (Throwable e) {
@@ -216,19 +244,20 @@ public final class ScreenshotHelper {
         }
     }
 
-    /** 大面积近黑：Window/overlay 截空常见 */
+    private static boolean isBadFrame(Bitmap bitmap) {
+        return isMostlyBlack(bitmap) || isLikelyGarbage(bitmap);
+    }
+
     private static boolean isMostlyBlack(Bitmap bitmap) {
         if (bitmap == null || bitmap.isRecycled()) return true;
         try {
             int w = bitmap.getWidth();
             int h = bitmap.getHeight();
             if (w < 4 || h < 4) return true;
-            int[] xs = {w / 5, w / 2, 4 * w / 5};
-            int[] ys = {h / 5, h / 2, 4 * h / 5};
             int dark = 0, total = 0;
-            for (int y : ys) {
-                for (int x : xs) {
-                    int c = bitmap.getPixel(x, y);
+            for (int yi = 1; yi <= 4; yi++) {
+                for (int xi = 1; xi <= 4; xi++) {
+                    int c = bitmap.getPixel(w * xi / 5, h * yi / 5);
                     int r = (c >> 16) & 0xff;
                     int g = (c >> 8) & 0xff;
                     int b = c & 0xff;
@@ -242,27 +271,41 @@ public final class ScreenshotHelper {
         }
     }
 
-    /** 大面积高绿：4K Surface 花屏 */
+    /**
+     * 花屏：大面积异常绿，或采样点之间反差极大的噪声条带。
+     */
     private static boolean isLikelyGarbage(Bitmap bitmap) {
         if (bitmap == null || bitmap.isRecycled()) return true;
         try {
             int w = bitmap.getWidth();
             int h = bitmap.getHeight();
             if (w < 8 || h < 8) return true;
-            int[] xs = {w / 4, w / 2, 3 * w / 4};
-            int[] ys = {h / 4, h / 2, 3 * h / 4};
-            int greenish = 0, total = 0;
-            for (int y : ys) {
-                for (int x : xs) {
-                    int c = bitmap.getPixel(x, y);
+            int greenish = 0, wild = 0, total = 0;
+            int prev = -1;
+            for (int yi = 1; yi <= 4; yi++) {
+                for (int xi = 1; xi <= 4; xi++) {
+                    int c = bitmap.getPixel(w * xi / 5, h * yi / 5);
                     int r = (c >> 16) & 0xff;
                     int g = (c >> 8) & 0xff;
                     int b = c & 0xff;
                     total++;
-                    if (g > 180 && g > r + 40 && g > b + 40) greenish++;
+                    if (g > 160 && g > r + 35 && g > b + 35) greenish++;
+                    // 品红/脏噪声
+                    if (r > 140 && b > 140 && g < 100) wild++;
+                    if (prev >= 0) {
+                        int pr = (prev >> 16) & 0xff;
+                        int pg = (prev >> 8) & 0xff;
+                        int pb = prev & 0xff;
+                        int dr = Math.abs(r - pr), dg = Math.abs(g - pg), db = Math.abs(b - pb);
+                        if (dr + dg + db > 280) wild++;
+                    }
+                    prev = c;
                 }
             }
-            return total > 0 && greenish * 2 >= total;
+            if (total == 0) return true;
+            if (greenish * 2 >= total) return true;
+            if (wild * 2 >= total) return true;
+            return false;
         } catch (Throwable e) {
             return false;
         }
