@@ -30,10 +30,13 @@ import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * 仅 leanback / TV 使用。与手机 ScreenshotHelper 完全独立。
- * 固定：Surface 截图，长边 1920 → 1280（约 1080p），PNG 保存（与成功样张一致，清晰度更好）。
+ * 仅 leanback / TV。逻辑对齐 20261028-1930 可用版：
+ * Surface 截图，长边 1920→1280，PNG；花屏检测与 1930 相同（不过度拦截）。
+ * 无 Texture 切换、无手机逻辑。
  */
 public final class TvScreenshot {
+
+    private static final int MAX_EDGE = 1920;
 
     public interface Callback {
         void onSuccess(Uri uri);
@@ -55,26 +58,21 @@ public final class TvScreenshot {
             fail(main, callback);
             return;
         }
-        surfaceView.post(() -> doCapture(activity, surfaceView, main, callback));
+        surfaceView.post(() -> captureView(activity, surfaceView, main, callback));
     }
 
-    private static void doCapture(Activity activity, View view, Handler main, Callback callback) {
+    private static void captureView(Activity activity, View view, Handler main, Callback callback) {
         if (view instanceof TextureView textureView) {
             try {
                 Bitmap raw = textureView.getBitmap();
-                if (raw != null && raw.getWidth() > 0) {
-                    Bitmap out = scaleToMax(raw, 1920);
+                if (raw != null && raw.getWidth() > 0 && !raw.isRecycled()) {
+                    Bitmap out = maybeDownscale(raw);
                     if (out != raw) {
-                        try {
-                            raw.recycle();
-                        } catch (Throwable ignored) {
-                        }
+                        try { raw.recycle(); } catch (Throwable ignored) {}
                     }
-                    if (isBad(out)) {
-                        try {
-                            out.recycle();
-                        } catch (Throwable ignored) {
-                        }
+                    // 1930：仅明显全黑/花屏才丢；成功则保存
+                    if (isMostlyBlack(out) || isLikelyGarbage(out)) {
+                        try { out.recycle(); } catch (Throwable ignored) {}
                         fail(main, callback);
                         return;
                     }
@@ -102,18 +100,24 @@ public final class TvScreenshot {
         Rect frame = holder.getSurfaceFrame();
         int fw = frame != null ? Math.max(frame.width(), 0) : 0;
         int fh = frame != null ? Math.max(frame.height(), 0) : 0;
-        int vw = Math.max(surfaceView.getWidth(), 1);
-        int vh = Math.max(surfaceView.getHeight(), 1);
+        int vw = surfaceView.getWidth();
+        int vh = surfaceView.getHeight();
         int srcW = fw > 0 ? fw : vw;
         int srcH = fh > 0 ? fh : vh;
+        if (srcW <= 0 || srcH <= 0) {
+            fail(main, callback);
+            return;
+        }
 
-        // 与 1930 一致：长边 1920（约 1920x1080），失败再 1280
-        int[] a = fit(srcW, srcH, 1920);
-        int[] b = fit(srcW, srcH, 1280);
-        tryCopy(activity, surfaceView, surface, new int[][]{a, b}, 0, main, callback);
+        int[] full = fitSize(srcW, srcH, MAX_EDGE);
+        int[] half = fitSize(srcW, srcH, Math.min(MAX_EDGE, 1280));
+        int[][] tries = (full[0] == half[0] && full[1] == half[1])
+                ? new int[][]{full}
+                : new int[][]{full, half};
+        tryPixelCopyChain(activity, surfaceView, surface, tries, 0, main, callback);
     }
 
-    private static void tryCopy(
+    private static void tryPixelCopyChain(
             Activity activity,
             SurfaceView surfaceView,
             Surface surface,
@@ -131,50 +135,52 @@ public final class TvScreenshot {
         try {
             bitmap = Bitmap.createBitmap(dw, dh, Bitmap.Config.ARGB_8888);
         } catch (Throwable e) {
-            tryCopy(activity, surfaceView, surface, sizes, index + 1, main, callback);
+            tryPixelCopyChain(activity, surfaceView, surface, sizes, index + 1, main, callback);
             return;
         }
 
         AtomicBoolean done = new AtomicBoolean(false);
-        PixelCopy.OnPixelCopyFinishedListener listener = result -> {
+        PixelCopy.OnPixelCopyFinishedListener listener = copyResult -> {
             if (!done.compareAndSet(false, true)) return;
-            if (result != PixelCopy.SUCCESS || isBad(bitmap)) {
-                try {
-                    bitmap.recycle();
-                } catch (Throwable ignored) {
-                }
-                tryCopy(activity, surfaceView, surface, sizes, index + 1, main, callback);
+            // 与 1930 相同：SUCCESS 且非明显花屏/全黑才保存
+            if (copyResult != PixelCopy.SUCCESS
+                    || isLikelyGarbage(bitmap)
+                    || isMostlyBlack(bitmap)) {
+                try { bitmap.recycle(); } catch (Throwable ignored) {}
+                tryPixelCopyChain(activity, surfaceView, surface, sizes, index + 1, main, callback);
                 return;
             }
             saveAsync(activity, bitmap, callback);
         };
 
         try {
-            PixelCopy.request(surface, bitmap, listener, main);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                PixelCopy.request(surface, bitmap, listener, main);
+            } else {
+                PixelCopy.request(surfaceView, bitmap, listener, main);
+            }
         } catch (Throwable e) {
             try {
                 PixelCopy.request(surfaceView, bitmap, listener, main);
             } catch (Throwable e2) {
-                try {
-                    bitmap.recycle();
-                } catch (Throwable ignored) {
-                }
-                tryCopy(activity, surfaceView, surface, sizes, index + 1, main, callback);
+                try { bitmap.recycle(); } catch (Throwable ignored) {}
+                tryPixelCopyChain(activity, surfaceView, surface, sizes, index + 1, main, callback);
             }
         }
     }
 
-    private static int[] fit(int w, int h, int maxEdge) {
+    private static int[] fitSize(int w, int h, int maxEdge) {
+        if (w <= 0 || h <= 0) return new int[]{1, 1};
         int max = Math.max(w, h);
-        if (max <= maxEdge) return new int[]{Math.max(1, w), Math.max(1, h)};
-        float s = maxEdge / (float) max;
-        return new int[]{Math.max(1, Math.round(w * s)), Math.max(1, Math.round(h * s))};
+        if (max <= maxEdge) return new int[]{w, h};
+        float scale = maxEdge / (float) max;
+        return new int[]{Math.max(1, Math.round(w * scale)), Math.max(1, Math.round(h * scale))};
     }
 
-    private static Bitmap scaleToMax(Bitmap src, int maxEdge) {
+    private static Bitmap maybeDownscale(Bitmap src) {
         int max = Math.max(src.getWidth(), src.getHeight());
-        if (max <= maxEdge) return src;
-        int[] s = fit(src.getWidth(), src.getHeight(), maxEdge);
+        if (max <= MAX_EDGE) return src;
+        int[] s = fitSize(src.getWidth(), src.getHeight(), MAX_EDGE);
         try {
             return Bitmap.createScaledBitmap(src, s[0], s[1], true);
         } catch (Throwable e) {
@@ -182,75 +188,53 @@ public final class TvScreenshot {
         }
     }
 
-    /**
-     * 花屏 / 近全黑 → 不落盘。
-     * 4K overlay 上 PixelCopy 常返回「整屏偏绿 + 高频噪点」，PNG 可到 5～6MB。
-     */
-    private static boolean isBad(Bitmap bitmap) {
+    /** 1930 原版阈值 */
+    private static boolean isMostlyBlack(Bitmap bitmap) {
         if (bitmap == null || bitmap.isRecycled()) return true;
         try {
             int w = bitmap.getWidth();
             int h = bitmap.getHeight();
-            if (w < 8 || h < 8) return true;
-
-            long sumR = 0, sumG = 0, sumB = 0;
-            int green = 0, dark = 0, wild = 0, total = 0;
-            int prev = -1;
-            // 8x8 网格，覆盖条带状花屏
-            for (int yi = 0; yi < 8; yi++) {
-                for (int xi = 0; xi < 8; xi++) {
-                    int x = w * (xi * 2 + 1) / 16;
-                    int y = h * (yi * 2 + 1) / 16;
+            if (w < 4 || h < 4) return true;
+            int[] xs = {w / 5, w / 2, 4 * w / 5};
+            int[] ys = {h / 5, h / 2, 4 * h / 5};
+            int dark = 0, total = 0;
+            for (int y : ys) {
+                for (int x : xs) {
                     int c = bitmap.getPixel(x, y);
                     int r = (c >> 16) & 0xff;
                     int g = (c >> 8) & 0xff;
                     int b = c & 0xff;
                     total++;
-                    sumR += r;
-                    sumG += g;
-                    sumB += b;
-                    if (r < 22 && g < 22 && b < 22) dark++;
-                    // 偏绿（含黄绿条）
-                    if (g >= r && g >= b && g > 100 && (g - Math.min(r, b)) > 25) green++;
-                    if (g > 140 && g > r + 20 && g > b + 20) green++;
-                    // 品红/脏噪声
-                    if (r > 120 && b > 120 && g < 120) wild++;
-                    if (prev >= 0) {
-                        int pr = (prev >> 16) & 0xff;
-                        int pg = (prev >> 8) & 0xff;
-                        int pb = prev & 0xff;
-                        int delta = Math.abs(r - pr) + Math.abs(g - pg) + Math.abs(b - pb);
-                        if (delta > 200) wild++;
-                    }
-                    prev = c;
+                    if (r < 18 && g < 18 && b < 18) dark++;
                 }
             }
-            if (total == 0) return true;
-            if (dark * 5 >= total * 3) return true;          // ≥60% 近黑
-            if (green * 10 >= total * 3) return true;         // ≥30% 异常绿
-            if (wild * 10 >= total * 3) return true;          // ≥30% 噪点跳变
-
-            // 整图平均严重偏绿（用户绿条花屏典型）
-            int avgR = (int) (sumR / total);
-            int avgG = (int) (sumG / total);
-            int avgB = (int) (sumB / total);
-            if (avgG > avgR + 30 && avgG > avgB + 30 && avgG > 90) return true;
-
-            // 邻域再扫一行：高频雪花
-            int jumps = 0, rowN = 0;
-            int y = h / 2;
-            int last = bitmap.getPixel(0, y);
-            for (int x = w / 32; x < w; x += Math.max(1, w / 32)) {
-                int c = bitmap.getPixel(x, y);
-                int r = (c >> 16) & 0xff, g = (c >> 8) & 0xff, b = c & 0xff;
-                int lr = (last >> 16) & 0xff, lg = (last >> 8) & 0xff, lb = last & 0xff;
-                if (Math.abs(r - lr) + Math.abs(g - lg) + Math.abs(b - lb) > 180) jumps++;
-                rowN++;
-                last = c;
-            }
-            if (rowN > 4 && jumps * 2 >= rowN) return true; // 中线一半以上剧烈跳变
-
+            return total > 0 && dark * 3 >= total * 2;
+        } catch (Throwable e) {
             return false;
+        }
+    }
+
+    /** 1930 原版阈值：仅明显大面积高绿 */
+    private static boolean isLikelyGarbage(Bitmap bitmap) {
+        if (bitmap == null || bitmap.isRecycled()) return true;
+        try {
+            int w = bitmap.getWidth();
+            int h = bitmap.getHeight();
+            if (w < 8 || h < 8) return true;
+            int[] xs = {w / 4, w / 2, 3 * w / 4};
+            int[] ys = {h / 4, h / 2, 3 * h / 4};
+            int greenish = 0, total = 0;
+            for (int y : ys) {
+                for (int x : xs) {
+                    int c = bitmap.getPixel(x, y);
+                    int r = (c >> 16) & 0xff;
+                    int g = (c >> 8) & 0xff;
+                    int b = c & 0xff;
+                    total++;
+                    if (g > 180 && g > r + 40 && g > b + 40) greenish++;
+                }
+            }
+            return total > 0 && greenish * 2 >= total;
         } catch (Throwable e) {
             return false;
         }
@@ -265,10 +249,7 @@ public final class TvScreenshot {
             } catch (Throwable e) {
                 err = e.getMessage();
             } finally {
-                try {
-                    bitmap.recycle();
-                } catch (Throwable ignored) {
-                }
+                try { bitmap.recycle(); } catch (Throwable ignored) {}
             }
             Uri finalUri = uri;
             String finalErr = err;
