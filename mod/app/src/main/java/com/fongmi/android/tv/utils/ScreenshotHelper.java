@@ -33,11 +33,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * 只截视频 surface，不含状态栏/控制栏。
  * <p>
  * 不用 Window 合成截图：硬件 overlay 视频层在 Window 截图里是黑的，还会带上系统栏。
- * SurfaceView 用 PixelCopy(Surface)；4K 优先「与 surface 同尺寸」，失败再缩小重试。
+ * SurfaceView 用 PixelCopy(Surface)；优先 surface 原尺寸（最大 4096），失败再 3840→2560→1920→1280。
  */
 public final class ScreenshotHelper {
 
-    private static final int MAX_EDGE = 1920;
+    /** 优先原尺寸；仅当过大或失败时再降到这些档位 */
+    private static final int HARD_CAP = 4096;
+    private static final int[] FALLBACK_EDGES = {3840, 2560, 1920, 1280};
 
     public interface Callback {
         void onSuccess(Uri uri);
@@ -121,12 +123,19 @@ public final class ScreenshotHelper {
     }
 
     private static int[][] buildTrySizes(int srcW, int srcH) {
-        int[] full = fitSize(srcW, srcH, MAX_EDGE);
-        int[] half = fitSize(srcW, srcH, Math.min(MAX_EDGE, 1280));
-        if (full[0] == half[0] && full[1] == half[1]) {
-            return new int[][]{full};
+        java.util.LinkedHashSet<String> seen = new java.util.LinkedHashSet<>();
+        java.util.ArrayList<int[]> list = new java.util.ArrayList<>();
+        // 1) 尽量原尺寸（极端超过 HARD_CAP 才压）
+        int[] nativeSize = fitSize(srcW, srcH, HARD_CAP);
+        list.add(nativeSize);
+        seen.add(nativeSize[0] + "x" + nativeSize[1]);
+        // 2) 逐级缩小，花屏/OOM 时回退
+        for (int edge : FALLBACK_EDGES) {
+            int[] s = fitSize(srcW, srcH, edge);
+            String key = s[0] + "x" + s[1];
+            if (seen.add(key)) list.add(s);
         }
-        return new int[][]{full, half};
+        return list.toArray(new int[0][]);
     }
 
     private static void tryPixelCopyChain(
@@ -198,8 +207,8 @@ public final class ScreenshotHelper {
 
     private static Bitmap maybeDownscale(Bitmap src) {
         int max = Math.max(src.getWidth(), src.getHeight());
-        if (max <= MAX_EDGE) return src;
-        int[] s = fitSize(src.getWidth(), src.getHeight(), MAX_EDGE);
+        if (max <= HARD_CAP) return src;
+        int[] s = fitSize(src.getWidth(), src.getHeight(), HARD_CAP);
         try {
             return Bitmap.createScaledBitmap(src, s[0], s[1], true);
         } catch (Throwable e) {
