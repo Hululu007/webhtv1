@@ -5641,8 +5641,8 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
 
     private void onScreenshot() {
         try {
-            com.fongmi.android.tv.utils.ScreenshotHelper.capture(this, getExoView(), true,
-                new com.fongmi.android.tv.utils.ScreenshotHelper.Callback() {
+            com.fongmi.android.tv.utils.TvScreenshot.capture(this, getExoView(),
+                new com.fongmi.android.tv.utils.TvScreenshot.Callback() {
                     @Override
                     public void onSuccess(android.net.Uri uri) {
                         try { com.fongmi.android.tv.utils.Notify.show(getString(com.fongmi.android.tv.R.string.screenshot_ok)); } catch (Throwable ignored) {}
