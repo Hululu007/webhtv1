@@ -18,6 +18,8 @@ import android.view.TextureView;
 import android.view.View;
 
 import androidx.annotation.Nullable;
+import androidx.media3.common.Player;
+import androidx.media3.common.VideoSize;
 import androidx.media3.ui.PlayerView;
 
 import com.fongmi.android.tv.App;
@@ -33,7 +35,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 仅 mobile / 手机使用。与 TV 的 {@code TvScreenshot} 完全独立。
- * 最高约 4K（长边 3840），PNG 保存。
+ * 优先按播放器报告的视频分辨率截图（长边上限 3840≈4K），PNG。
+ * 说明：PixelCopy 仍来自当前 Surface，若屏上只渲染了较低分辨率，放大后清晰度不会超过实际渲染。
  */
 public final class PhoneScreenshot {
 
@@ -59,15 +62,28 @@ public final class PhoneScreenshot {
             fail(main, callback);
             return;
         }
-        surfaceView.post(() -> doCapture(activity, surfaceView, main, callback));
+        surfaceView.post(() -> doCapture(activity, playerView, surfaceView, main, callback));
     }
 
-    private static void doCapture(Activity activity, View view, Handler main, Callback callback) {
+    private static void doCapture(Activity activity, PlayerView playerView, View view, Handler main, Callback callback) {
         if (view instanceof TextureView textureView) {
             try {
                 Bitmap raw = textureView.getBitmap();
                 if (raw != null && raw.getWidth() > 0) {
-                    Bitmap out = scaleToMax(raw, MAX_EDGE);
+                    int[] video = resolveVideoSize(playerView);
+                    Bitmap out = raw;
+                    if (video[0] > 0 && video[1] > 0) {
+                        int[] target = fit(video[0], video[1], MAX_EDGE);
+                        if (target[0] != raw.getWidth() || target[1] != raw.getHeight()) {
+                            try {
+                                out = Bitmap.createScaledBitmap(raw, target[0], target[1], true);
+                            } catch (Throwable ignored) {
+                                out = scaleToMax(raw, MAX_EDGE);
+                            }
+                        }
+                    } else {
+                        out = scaleToMax(raw, MAX_EDGE);
+                    }
                     if (out != raw) {
                         try {
                             raw.recycle();
@@ -108,8 +124,17 @@ public final class PhoneScreenshot {
         int fh = frame != null ? Math.max(frame.height(), 0) : 0;
         int vw = Math.max(surfaceView.getWidth(), 1);
         int vh = Math.max(surfaceView.getHeight(), 1);
-        int srcW = fw > 0 ? fw : vw;
-        int srcH = fh > 0 ? fh : vh;
+        int surfW = fw > 0 ? fw : vw;
+        int surfH = fh > 0 ? fh : vh;
+
+        // 优先用播放器报告的「视频分辨率」作为截图目标尺寸（上限 4K）
+        int[] video = resolveVideoSize(playerView);
+        int srcW = surfW;
+        int srcH = surfH;
+        if (video[0] > 0 && video[1] > 0) {
+            srcW = video[0];
+            srcH = video[1];
+        }
 
         int[] full = fit(srcW, srcH, MAX_EDGE);
         int[] mid = fit(srcW, srcH, 2560);
