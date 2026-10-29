@@ -29,11 +29,9 @@ import com.fongmi.android.tv.R;
 
 import java.io.OutputStream;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -75,7 +73,7 @@ public final class PhoneScreenshot {
                 frame = tryDecodeFrame(p);
             } catch (Throwable ignored) {
             }
-            if (frame != null && !isBad(frame)) {
+            if (frame != null) {
                 Bitmap out = scaleToMax(frame, MAX_EDGE);
                 if (out != frame) {
                     try {
@@ -247,14 +245,6 @@ public final class PhoneScreenshot {
                         } catch (Throwable ignored) {
                         }
                     }
-                    if (isBad(out)) {
-                        try {
-                            out.recycle();
-                        } catch (Throwable ignored) {
-                        }
-                        fail(main, callback);
-                        return;
-                    }
                     saveAsync(activity, out, callback);
                     return;
                 }
@@ -289,51 +279,39 @@ public final class PhoneScreenshot {
         int srcW = target[0];
         int srcH = target[1];
 
+        // 固定最高可用分辨率，不因失败降档重试
         int[] full = fit(srcW, srcH, MAX_EDGE);
-        int[] mid = fit(srcW, srcH, Math.min(MAX_EDGE, Math.max(srcW, srcH) * 3 / 4));
-        int[] low = fit(srcW, srcH, Math.min(1920, Math.max(srcW, srcH)));
-        ArrayList<int[]> list = new ArrayList<>();
-        LinkedHashSet<String> seen = new LinkedHashSet<>();
-        for (int[] s : new int[][]{full, mid, low}) {
-            String k = s[0] + "x" + s[1];
-            if (seen.add(k)) list.add(s);
-        }
-        tryCopy(activity, surfaceView, surface, list.toArray(new int[0][]), 0, main, callback);
+        tryCopyOnce(activity, surfaceView, surface, full[0], full[1], main, callback);
     }
 
-    private static void tryCopy(
+    private static void tryCopyOnce(
             Activity activity,
             SurfaceView surfaceView,
             Surface surface,
-            int[][] sizes,
-            int index,
+            int dw,
+            int dh,
             Handler main,
             Callback callback) {
-        if (index >= sizes.length) {
-            fail(main, callback);
-            return;
-        }
-        int dw = sizes[index][0];
-        int dh = sizes[index][1];
         Bitmap bitmap;
         try {
             bitmap = Bitmap.createBitmap(dw, dh, Bitmap.Config.ARGB_8888);
         } catch (Throwable e) {
-            tryCopy(activity, surfaceView, surface, sizes, index + 1, main, callback);
+            fail(main, callback);
             return;
         }
 
         AtomicBoolean done = new AtomicBoolean(false);
         PixelCopy.OnPixelCopyFinishedListener listener = result -> {
             if (!done.compareAndSet(false, true)) return;
-            if (result != PixelCopy.SUCCESS || isBad(bitmap)) {
+            if (result != PixelCopy.SUCCESS) {
                 try {
                     bitmap.recycle();
                 } catch (Throwable ignored) {
                 }
-                tryCopy(activity, surfaceView, surface, sizes, index + 1, main, callback);
+                fail(main, callback);
                 return;
             }
+            // 不做黑屏/绿屏检测，避免正常画面被误判
             saveAsync(activity, bitmap, callback);
         };
 
@@ -347,7 +325,7 @@ public final class PhoneScreenshot {
                     bitmap.recycle();
                 } catch (Throwable ignored) {
                 }
-                tryCopy(activity, surfaceView, surface, sizes, index + 1, main, callback);
+                fail(main, callback);
             }
         }
     }
@@ -555,32 +533,6 @@ public final class PhoneScreenshot {
         return v;
     }
 
-    private static boolean isBad(Bitmap bitmap) {
-        if (bitmap == null || bitmap.isRecycled()) return true;
-        try {
-            int w = bitmap.getWidth();
-            int h = bitmap.getHeight();
-            if (w < 8 || h < 8) return true;
-            int green = 0, dark = 0, total = 0;
-            for (int yi = 1; yi <= 4; yi++) {
-                for (int xi = 1; xi <= 4; xi++) {
-                    int c = bitmap.getPixel(w * xi / 5, h * yi / 5);
-                    int r = (c >> 16) & 0xff;
-                    int g = (c >> 8) & 0xff;
-                    int b = c & 0xff;
-                    total++;
-                    if (r < 18 && g < 18 && b < 18) dark++;
-                    if (g > 180 && g > r + 40 && g > b + 40) green++;
-                }
-            }
-            if (total == 0) return true;
-            if (dark * 3 >= total * 2) return true;
-            if (green * 2 >= total) return true;
-            return false;
-        } catch (Throwable e) {
-            return false;
-        }
-    }
 
     private static void saveAsync(Activity activity, Bitmap bitmap, @Nullable Callback callback) {
         Task.execute(() -> {
@@ -635,19 +587,29 @@ public final class PhoneScreenshot {
         }
         Uri uri = activity.getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
         if (uri == null) throw new IllegalStateException("insert failed");
-        try (OutputStream os = activity.getContentResolver().openOutputStream(uri)) {
-            if (os == null) throw new IllegalStateException("openOutputStream failed");
-            if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, os)) {
-                throw new IllegalStateException("compress failed");
+        try {
+            try (OutputStream os = activity.getContentResolver().openOutputStream(uri)) {
+                if (os == null) throw new IllegalStateException("openOutputStream failed");
+                if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, os)) {
+                    throw new IllegalStateException("compress failed");
+                }
+                os.flush();
             }
-            os.flush();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ContentValues done = new ContentValues();
+                done.put(MediaStore.Images.Media.IS_PENDING, 0);
+                activity.getContentResolver().update(uri, done, null, null);
+            }
+            return uri;
+        } catch (Throwable e) {
+            // 删除残留，避免 IS_PENDING=1 或损坏条目留在相册
+            try {
+                activity.getContentResolver().delete(uri, null, null);
+            } catch (Throwable ignored) {
+            }
+            if (e instanceof Exception) throw (Exception) e;
+            throw new Exception(e);
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            values.clear();
-            values.put(MediaStore.Images.Media.IS_PENDING, 0);
-            activity.getContentResolver().update(uri, values, null, null);
-        }
-        return uri;
     }
 
     private static void fail(Handler main, Callback callback) {
