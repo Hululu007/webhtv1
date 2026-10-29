@@ -404,13 +404,23 @@ public final class PhoneScreenshot {
         Task.execute(() -> {
             Uri uri = null;
             String err = null;
+            Bitmap toSave = bitmap;
             try {
-                uri = savePng(activity, bitmap);
+                // Surface 回退路径也可能是 limited range，统一拉一遍电平
+                Bitmap enhanced = enhanceVideoLevels(bitmap);
+                if (enhanced != bitmap) {
+                    try {
+                        bitmap.recycle();
+                    } catch (Throwable ignored) {
+                    }
+                    toSave = enhanced;
+                }
+                uri = savePng(activity, toSave);
             } catch (Throwable e) {
                 err = e.getMessage();
             } finally {
                 try {
-                    bitmap.recycle();
+                    toSave.recycle();
                 } catch (Throwable ignored) {
                 }
             }
