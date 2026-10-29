@@ -414,6 +414,54 @@ public final class PhoneScreenshot {
      * 视频帧常见 limited range (16–235) 被当 full range 会发灰。
      * 检测后拉伸到 0–255，并略提对比，仅用于截图落盘。
      */
+
+    /**
+     * 轻度反锐化蒙版：中心略抬，邻域微减，再与原图混合，避免过锐。
+     */
+    private static Bitmap mildSharpen(Bitmap src) {
+        if (src == null || src.isRecycled()) return src;
+        try {
+            int w = src.getWidth();
+            int h = src.getHeight();
+            if (w < 3 || h < 3) return src;
+            Bitmap out = src.copy(Bitmap.Config.ARGB_8888, true);
+            if (out == null) return src;
+            int[] srcPx = new int[w * h];
+            int[] dstPx = new int[w * h];
+            src.getPixels(srcPx, 0, w, 0, 0, w, h);
+            System.arraycopy(srcPx, 0, dstPx, 0, srcPx.length);
+            for (int y = 1; y < h - 1; y++) {
+                int row = y * w;
+                for (int x = 1; x < w - 1; x++) {
+                    int i = row + x;
+                    int c0 = srcPx[i];
+                    int a = (c0 >>> 24) & 0xff;
+                    int r = 0, g = 0, b = 0;
+                    int[] offs = {i - w, i - 1, i, i + 1, i + w};
+                    int[] coef = {-1, -1, 5, -1, -1};
+                    for (int k = 0; k < 5; k++) {
+                        int c = srcPx[offs[k]];
+                        int m = coef[k];
+                        r += ((c >> 16) & 0xff) * m;
+                        g += ((c >> 8) & 0xff) * m;
+                        b += (c & 0xff) * m;
+                    }
+                    int or = (c0 >> 16) & 0xff;
+                    int og = (c0 >> 8) & 0xff;
+                    int ob = c0 & 0xff;
+                    r = clamp((r * 35 + or * 65) / 100);
+                    g = clamp((g * 35 + og * 65) / 100);
+                    b = clamp((b * 35 + ob * 65) / 100);
+                    dstPx[i] = (a << 24) | (r << 16) | (g << 8) | b;
+                }
+            }
+            out.setPixels(dstPx, 0, w, 0, 0, w, h);
+            return out;
+        } catch (Throwable e) {
+            return src;
+        }
+    }
+
     private static Bitmap enhanceVideoLevels(Bitmap src) {
         if (src == null || src.isRecycled()) return src;
         try {
