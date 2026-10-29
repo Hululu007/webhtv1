@@ -148,28 +148,45 @@ public final class PhoneScreenshot {
                 return null;
             }
 
-            // 片源宽高（优先 metadata，其次播放器 VideoSize）
-            int dstW = 0, dstH = 0;
+            // 片源宽高：metadata 与播放器 VideoSize 都读；取更大的那组（避免 VideoSize=渲染尺寸 2560 压过 3840 片源）
+            int metaW = 0, metaH = 0;
+            int playW = 0, playH = 0;
             try {
                 String ws = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH);
                 String hs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT);
                 if (ws != null && hs != null) {
-                    dstW = Integer.parseInt(ws);
-                    dstH = Integer.parseInt(hs);
+                    metaW = Integer.parseInt(ws);
+                    metaH = Integer.parseInt(hs);
                 }
             } catch (Throwable ignored) {
             }
-            if (dstW <= 0 || dstH <= 0) {
-                try {
-                    VideoSize vs = player.getVideoSize();
-                    if (vs != null && vs.width > 0 && vs.height > 0) {
-                        dstW = vs.width;
-                        dstH = vs.height;
-                    }
-                } catch (Throwable ignored) {
+            try {
+                VideoSize vs = player.getVideoSize();
+                if (vs != null && vs.width > 0 && vs.height > 0) {
+                    playW = vs.width;
+                    playH = vs.height;
                 }
+            } catch (Throwable ignored) {
             }
-            // 长边上限 4K，等比缩放目标尺寸
+            int dstW = 0, dstH = 0;
+            if (metaW > 0 && metaH > 0 && playW > 0 && playH > 0) {
+                long metaArea = (long) metaW * metaH;
+                long playArea = (long) playW * playH;
+                if (metaArea >= playArea) {
+                    dstW = metaW;
+                    dstH = metaH;
+                } else {
+                    dstW = playW;
+                    dstH = playH;
+                }
+            } else if (metaW > 0 && metaH > 0) {
+                dstW = metaW;
+                dstH = metaH;
+            } else if (playW > 0 && playH > 0) {
+                dstW = playW;
+                dstH = playH;
+            }
+            // 长边上限 4K；3840x2160 原样保留
             if (dstW > 0 && dstH > 0) {
                 int[] fitted = fit(dstW, dstH, MAX_EDGE);
                 dstW = fitted[0];
@@ -213,6 +230,24 @@ public final class PhoneScreenshot {
                 }
             }
             if (bitmap == null) return null;
+            // 若普通出帧分辨率明显低于已解析的片源目标，再强制按目标尺寸 scaled 一次
+            if (dstW > 0 && dstH > 0
+                    && (bitmap.getWidth() * bitmap.getHeight() < dstW * dstH * 9 / 10)
+                    && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                try {
+                    Bitmap scaled = retriever.getScaledFrameAtTime(
+                            posUs, MediaMetadataRetriever.OPTION_CLOSEST, dstW, dstH);
+                    if (scaled != null && scaled.getWidth() * scaled.getHeight()
+                            > bitmap.getWidth() * bitmap.getHeight()) {
+                        try {
+                            bitmap.recycle();
+                        } catch (Throwable ignored) {
+                        }
+                        bitmap = scaled;
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
             return bitmap;
         } catch (Throwable e) {
             return null;
