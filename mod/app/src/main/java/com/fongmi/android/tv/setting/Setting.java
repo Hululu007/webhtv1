@@ -854,16 +854,16 @@ public class Setting {
     }
 
     /** 播放控制栏截图按键（默认开） */
-    /** 截图：0=关 1=PNG 2=WebP */
+    /** 截图：0=关 1=PNG 2=WebP无损 3=WebP95 */
     public static final int SCREENSHOT_OFF = 0;
     public static final int SCREENSHOT_PNG = 1;
     public static final int SCREENSHOT_WEBP = 2;
+    public static final int SCREENSHOT_WEBP95 = 3;
 
     public static int getPlaybackScreenshotMode() {
         try {
-            // 新键：-1 表示未写入，回退旧布尔
             int m = Prefers.getInt("playback_screenshot_mode", -1);
-            if (m >= 0 && m <= 2) return m;
+            if (m >= 0 && m <= 3) return m;
         } catch (Throwable ignored) {
         }
         try {
@@ -874,12 +874,12 @@ public class Setting {
     }
 
     public static void putPlaybackScreenshotMode(int mode) {
-        if (mode < 0 || mode > 2) mode = SCREENSHOT_PNG;
+        if (mode < 0 || mode > 3) mode = SCREENSHOT_PNG;
         Prefers.put("playback_screenshot_mode", mode);
     }
 
     public static void cyclePlaybackScreenshotMode() {
-        putPlaybackScreenshotMode((getPlaybackScreenshotMode() + 1) % 3);
+        putPlaybackScreenshotMode((getPlaybackScreenshotMode() + 1) % 4);
     }
 
     public static String getPlaybackScreenshotModeLabel() {
@@ -888,6 +888,8 @@ public class Setting {
                 return "关";
             case SCREENSHOT_WEBP:
                 return "WebP";
+            case SCREENSHOT_WEBP95:
+                return "WebP95";
             case SCREENSHOT_PNG:
             default:
                 return "PNG";
