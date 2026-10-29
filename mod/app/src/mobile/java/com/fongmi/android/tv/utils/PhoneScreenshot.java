@@ -70,113 +70,111 @@ public final class PhoneScreenshot {
             fail(main, callback);
             return;
         }
-        Player player = null;
-        try {
-            player = playerView.getPlayer();
-        } catch (Throwable ignored) {
-        }
-        final Player p = player;
-        // 后台尝试解码器出帧，避免卡 UI
-        Task.execute(() -> {
-            Bitmap frame = null;
-            try {
-                frame = tryDecodeFrame(p);
-            } catch (Throwable ignored) {
-            }
-            if (frame != null) {
-                if (DIAG) try { Log.i(TAG, "path=DECODE frame=" + frame.getWidth() + "x" + frame.getHeight()); } catch (Throwable ignored) {}
-                Bitmap out = scaleToMax(frame, MAX_EDGE);
-                if (out != frame) {
-                    if (DIAG) try { Log.i(TAG, "after scaleToMax=" + out.getWidth() + "x" + out.getHeight()); } catch (Throwable ignored) {}
-                    try {
-                        frame.recycle();
-                    } catch (Throwable ignored) {
+        Runnable startDecode = () -> {
+            final Snapshot snap = snapshotPlayer(playerView);
+            if (DIAG) try {
+                Log.i(TAG, "snapshot uri=" + (snap == null ? "null" : String.valueOf(snap.uri))
+                        + " posMs=" + (snap == null ? -1 : snap.posMs)
+                        + " video=" + (snap == null ? "?" : (snap.videoW + "x" + snap.videoH)));
+            } catch (Throwable ignored) {}
+            Task.execute(() -> {
+                Bitmap frame = null;
+                try {
+                    if (snap != null && snap.uri != null) {
+                        frame = decodeFromSnapshot(snap);
                     }
+                } catch (Throwable e) {
+                    if (DIAG) try { Log.i(TAG, "decode err=" + e); } catch (Throwable ignored) {}
                 }
-                saveAsync(activity, out, callback);
-                return;
-            }
-            if (DIAG) try { Log.i(TAG, "path=SURFACE_FALLBACK decodeFrame=null"); } catch (Throwable ignored) {}
-            // 回退 Surface（主线程）
-            main.post(() -> captureSurface(activity, playerView, main, callback));
-        });
+                if (frame != null) {
+                    if (DIAG) try { Log.i(TAG, "path=DECODE frame=" + frame.getWidth() + "x" + frame.getHeight()); } catch (Throwable ignored) {}
+                    Bitmap out = scaleToMax(frame, MAX_EDGE);
+                    if (out != frame) {
+                        if (DIAG) try { Log.i(TAG, "after scaleToMax=" + out.getWidth() + "x" + out.getHeight()); } catch (Throwable ignored) {}
+                        try { frame.recycle(); } catch (Throwable ignored) {}
+                    }
+                    saveAsync(activity, out, callback);
+                    return;
+                }
+                if (DIAG) try { Log.i(TAG, "path=SURFACE_FALLBACK decodeFrame=null"); } catch (Throwable ignored) {}
+                main.post(() -> captureSurface(activity, playerView, main, callback));
+            });
+        };
+        if (Looper.myLooper() == Looper.getMainLooper()) startDecode.run();
+        else main.post(startDecode);
     }
 
-    /**
-     * 独立打开一路 MediaMetadataRetriever，按当前播放进度取最接近帧。
-     * 不触碰正在播放的 Exo 解码器；仅截图瞬间耗电/CPU。
-     */
+    private static final class Snapshot {
+        final Uri uri;
+        final long posMs;
+        final Map<String, String> headers;
+        final int videoW;
+        final int videoH;
+
+        Snapshot(Uri uri, long posMs, Map<String, String> headers, int videoW, int videoH) {
+            this.uri = uri;
+            this.posMs = posMs;
+            this.headers = headers != null ? headers : Collections.emptyMap();
+            this.videoW = videoW;
+            this.videoH = videoH;
+        }
+    }
+
+    /** 主线程调用：只在这里读 Player */
     @Nullable
-    private static Bitmap tryDecodeFrame(@Nullable Player player) {
-        Bitmap retrieverBmp = tryDecodeFrameRetriever(player);
-        if (retrieverBmp != null) return retrieverBmp;
+    private static Snapshot snapshotPlayer(PlayerView playerView) {
         try {
+            Player player = playerView.getPlayer();
             if (player == null) return null;
             MediaItem item = player.getCurrentMediaItem();
             if (item == null || item.localConfiguration == null) return null;
             Uri uri = item.localConfiguration.uri;
-            long posUs = Math.max(0L, player.getCurrentPosition()) * 1000L;
+            long posMs = player.getCurrentPosition();
             Map<String, String> headers = extractHeaders(item);
-            if (DIAG) try { Log.i(TAG, "retriever failed, trying MediaCodec uri=" + uri); } catch (Throwable ignored) {}
-            return tryMediaCodecFrame(uri, headers, posUs, player);
+            int vw = 0, vh = 0;
+            try {
+                VideoSize vs = player.getVideoSize();
+                if (vs != null) {
+                    vw = vs.width;
+                    vh = vs.height;
+                }
+            } catch (Throwable ignored) {
+            }
+            return new Snapshot(uri, posMs, headers, vw, vh);
         } catch (Throwable e) {
-            if (DIAG) try { Log.i(TAG, "codec wrapper err=" + e); } catch (Throwable ignored) {}
+            if (DIAG) try { Log.i(TAG, "snapshotPlayer err=" + e); } catch (Throwable ignored) {}
             return null;
         }
     }
 
     @Nullable
-    private static Bitmap tryDecodeFrameRetriever(@Nullable Player player) {
-        if (player == null) return null;
-        MediaItem item;
-        long posMs;
-        try {
-            item = player.getCurrentMediaItem();
-            posMs = player.getCurrentPosition();
-        } catch (Throwable e) {
-            return null;
-        }
-        if (item == null || item.localConfiguration == null) return null;
-        Uri uri = item.localConfiguration.uri;
+    private static Bitmap decodeFromSnapshot(Snapshot snap) {
+        long posUs = Math.max(0L, snap.posMs) * 1000L;
+        Bitmap b = tryRetrieverUri(snap.uri, snap.headers, posUs, snap.videoW, snap.videoH);
+        if (b != null) return b;
+        if (DIAG) try { Log.i(TAG, "retriever failed, trying MediaCodec uri=" + snap.uri); } catch (Throwable ignored) {}
+        return tryMediaCodecFrame(snap.uri, snap.headers, posUs, snap.videoW, snap.videoH);
+    }
+
+    @Nullable
+    private static Bitmap tryRetrieverUri(Uri uri, Map<String, String> headers, long posUs, int playW, int playH) {
         if (uri == null) return null;
         String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.US);
-        long posUs = Math.max(0L, posMs) * 1000L;
+        if (DIAG) try { Log.i(TAG, "retriever scheme=" + scheme + " posUs=" + posUs); } catch (Throwable ignored) {}
 
         MediaMetadataRetriever retriever = new MediaMetadataRetriever();
         try {
             if ("file".equals(scheme) || "content".equals(scheme) || "android.resource".equals(scheme)) {
                 retriever.setDataSource(App.get(), uri);
             } else if ("http".equals(scheme) || "https".equals(scheme)) {
-                Map<String, String> headers = new HashMap<>();
-                try {
-                    // 反射读取可能存在的请求头，避免依赖具体 Media3 字段名
-                    Object conf = item.localConfiguration;
-                    for (String fieldName : new String[]{"httpRequestHeaders", "requestHeaders", "headers"}) {
-                        try {
-                            java.lang.reflect.Field f = conf.getClass().getField(fieldName);
-                            Object v = f.get(conf);
-                            if (v instanceof Map) {
-                                for (Map.Entry<?, ?> e : ((Map<?, ?>) v).entrySet()) {
-                                    if (e.getKey() != null && e.getValue() != null) {
-                                        headers.put(String.valueOf(e.getKey()), String.valueOf(e.getValue()));
-                                    }
-                                }
-                                break;
-                            }
-                        } catch (Throwable ignored) {
-                        }
-                    }
-                } catch (Throwable ignored) {
-                }
-                retriever.setDataSource(uri.toString(), headers.isEmpty() ? Collections.emptyMap() : headers);
+                Map<String, String> hdr = headers == null ? Collections.emptyMap() : headers;
+                retriever.setDataSource(uri.toString(), hdr);
             } else {
-                // push / custom scheme 等：Retriever 通常无效
+                if (DIAG) try { Log.i(TAG, "retriever skip scheme=" + scheme); } catch (Throwable ignored) {}
                 return null;
             }
 
-            // 片源宽高：metadata 与播放器 VideoSize 都读；取更大的那组（避免 VideoSize=渲染尺寸 2560 压过 3840 片源）
             int metaW = 0, metaH = 0;
-            int playW = 0, playH = 0;
             try {
                 String ws = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH);
                 String hs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT);
@@ -186,19 +184,9 @@ public final class PhoneScreenshot {
                 }
             } catch (Throwable ignored) {
             }
-            try {
-                VideoSize vs = player.getVideoSize();
-                if (vs != null && vs.width > 0 && vs.height > 0) {
-                    playW = vs.width;
-                    playH = vs.height;
-                }
-            } catch (Throwable ignored) {
-            }
             int dstW = 0, dstH = 0;
             if (metaW > 0 && metaH > 0 && playW > 0 && playH > 0) {
-                long metaArea = (long) metaW * metaH;
-                long playArea = (long) playW * playH;
-                if (metaArea >= playArea) {
+                if ((long) metaW * metaH >= (long) playW * playH) {
                     dstW = metaW;
                     dstH = metaH;
                 } else {
@@ -212,101 +200,46 @@ public final class PhoneScreenshot {
                 dstW = playW;
                 dstH = playH;
             }
-            // 长边上限 4K；3840x2160 原样保留
             if (dstW > 0 && dstH > 0) {
                 int[] fitted = fit(dstW, dstH, MAX_EDGE);
                 dstW = fitted[0];
                 dstH = fitted[1];
             }
             if (DIAG) try {
-                Log.i(TAG, "meta=" + metaW + "x" + metaH
-                        + " playVideoSize=" + playW + "x" + playH
-                        + " dst=" + dstW + "x" + dstH);
+                Log.i(TAG, "meta=" + metaW + "x" + metaH + " playVideoSize=" + playW + "x" + playH + " dst=" + dstW + "x" + dstH);
             } catch (Throwable ignored) {}
 
             Bitmap bitmap = null;
-            // API 27+：按目标分辨率直接解码缩放帧（比先小后放大更锐）
             if (dstW > 0 && dstH > 0 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                 try {
-                    bitmap = retriever.getScaledFrameAtTime(
-                            posUs, MediaMetadataRetriever.OPTION_CLOSEST, dstW, dstH);
-                    if (DIAG) try { Log.i(TAG, "getScaledFrameAtTime CLOSEST "
-                            + (bitmap == null ? "null" : (bitmap.getWidth() + "x" + bitmap.getHeight()))); } catch (Throwable ignored) {}
+                    bitmap = retriever.getScaledFrameAtTime(posUs, MediaMetadataRetriever.OPTION_CLOSEST, dstW, dstH);
+                    if (DIAG) try { Log.i(TAG, "getScaledFrameAtTime CLOSEST " + (bitmap == null ? "null" : (bitmap.getWidth() + "x" + bitmap.getHeight()))); } catch (Throwable ignored) {}
                 } catch (Throwable e) {
                     if (DIAG) try { Log.i(TAG, "getScaledFrameAtTime CLOSEST err=" + e); } catch (Throwable ignored) {}
                 }
                 if (bitmap == null) {
                     try {
-                        bitmap = retriever.getScaledFrameAtTime(
-                                posUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, dstW, dstH);
-                        if (DIAG) try { Log.i(TAG, "getScaledFrameAtTime CLOSEST_SYNC "
-                                + (bitmap == null ? "null" : (bitmap.getWidth() + "x" + bitmap.getHeight()))); } catch (Throwable ignored) {}
+                        bitmap = retriever.getScaledFrameAtTime(posUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, dstW, dstH);
+                        if (DIAG) try { Log.i(TAG, "getScaledFrameAtTime CLOSEST_SYNC " + (bitmap == null ? "null" : (bitmap.getWidth() + "x" + bitmap.getHeight()))); } catch (Throwable ignored) {}
                     } catch (Throwable e) {
                         if (DIAG) try { Log.i(TAG, "getScaledFrameAtTime CLOSEST_SYNC err=" + e); } catch (Throwable ignored) {}
                     }
-                }
-            } else {
-                if (DIAG) try { Log.i(TAG, "skip getScaledFrameAtTime dst invalid or API<27"); } catch (Throwable ignored) {}
-            }
-            if (bitmap == null) {
-                try {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                        bitmap = retriever.getFrameAtTime(posUs, MediaMetadataRetriever.OPTION_CLOSEST);
-                        if (DIAG) try { Log.i(TAG, "getFrameAtTime CLOSEST "
-                                + (bitmap == null ? "null" : (bitmap.getWidth() + "x" + bitmap.getHeight()))); } catch (Throwable ignored) {}
-                    }
-                } catch (Throwable e) {
-                    if (DIAG) try { Log.i(TAG, "getFrameAtTime CLOSEST err=" + e); } catch (Throwable ignored) {}
                 }
             }
             if (bitmap == null) {
                 try {
                     bitmap = retriever.getFrameAtTime(posUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
-                    if (DIAG) try { Log.i(TAG, "getFrameAtTime CLOSEST_SYNC "
-                            + (bitmap == null ? "null" : (bitmap.getWidth() + "x" + bitmap.getHeight()))); } catch (Throwable ignored) {}
+                    if (DIAG) try { Log.i(TAG, "getFrameAtTime " + (bitmap == null ? "null" : (bitmap.getWidth() + "x" + bitmap.getHeight()))); } catch (Throwable ignored) {}
                 } catch (Throwable e) {
-                    if (DIAG) try { Log.i(TAG, "getFrameAtTime CLOSEST_SYNC err=" + e); } catch (Throwable ignored) {}
-                }
-            }
-            if (bitmap == null) {
-                try {
-                    bitmap = retriever.getFrameAtTime(posUs);
-                    if (DIAG) try { Log.i(TAG, "getFrameAtTime default "
-                            + (bitmap == null ? "null" : (bitmap.getWidth() + "x" + bitmap.getHeight()))); } catch (Throwable ignored) {}
-                } catch (Throwable e) {
-                    if (DIAG) try { Log.i(TAG, "getFrameAtTime default err=" + e); } catch (Throwable ignored) {}
-                }
-            }
-            if (bitmap == null) {
-                if (DIAG) try { Log.i(TAG, "decode all methods null"); } catch (Throwable ignored) {}
-                return null;
-            }
-            // 若普通出帧分辨率明显低于已解析的片源目标，再强制按目标尺寸 scaled 一次
-            if (dstW > 0 && dstH > 0
-                    && (bitmap.getWidth() * bitmap.getHeight() < dstW * dstH * 9 / 10)
-                    && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                try {
-                    Bitmap scaled = retriever.getScaledFrameAtTime(
-                            posUs, MediaMetadataRetriever.OPTION_CLOSEST, dstW, dstH);
-                    if (scaled != null && scaled.getWidth() * scaled.getHeight()
-                            > bitmap.getWidth() * bitmap.getHeight()) {
-                        try {
-                            bitmap.recycle();
-                        } catch (Throwable ignored) {
-                        }
-                        bitmap = scaled;
-                    }
-                } catch (Throwable ignored) {
+                    if (DIAG) try { Log.i(TAG, "getFrameAtTime err=" + e); } catch (Throwable ignored) {}
                 }
             }
             return bitmap;
         } catch (Throwable e) {
+            if (DIAG) try { Log.i(TAG, "retriever exception: " + e); } catch (Throwable ignored) {}
             return null;
         } finally {
-            try {
-                retriever.release();
-            } catch (Throwable ignored) {
-            }
+            try { retriever.release(); } catch (Throwable ignored) {}
         }
     }
 
@@ -744,7 +677,7 @@ public final class PhoneScreenshot {
     }
 
     @Nullable
-    private static Bitmap tryMediaCodecFrame(Uri uri, Map<String, String> headers, long posUs, @Nullable Player player) {
+    private static Bitmap tryMediaCodecFrame(Uri uri, Map<String, String> headers, long posUs, int playW, int playH) {
         if (uri == null) return null;
         MediaExtractor extractor = null;
         MediaCodec codec = null;
@@ -785,15 +718,9 @@ public final class PhoneScreenshot {
 
             int width = format.containsKey(MediaFormat.KEY_WIDTH) ? format.getInteger(MediaFormat.KEY_WIDTH) : 0;
             int height = format.containsKey(MediaFormat.KEY_HEIGHT) ? format.getInteger(MediaFormat.KEY_HEIGHT) : 0;
-            if ((width <= 0 || height <= 0) && player != null) {
-                try {
-                    VideoSize vs = player.getVideoSize();
-                    if (vs != null) {
-                        width = vs.width;
-                        height = vs.height;
-                    }
-                } catch (Throwable ignored) {
-                }
+            if (width <= 0 || height <= 0) {
+                width = playW;
+                height = playH;
             }
             if (width <= 0 || height <= 0) {
                 if (DIAG) try { Log.i(TAG, "codec unknown size"); } catch (Throwable ignored) {}
