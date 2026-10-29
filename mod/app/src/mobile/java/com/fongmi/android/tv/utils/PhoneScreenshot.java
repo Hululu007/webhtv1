@@ -6,6 +6,7 @@ import android.graphics.Bitmap;
 import android.graphics.Rect;
 import android.media.MediaMetadataRetriever;
 import android.net.Uri;
+import android.util.Log;
 import android.os.Build;
 import android.os.Environment;
 import android.os.Handler;
@@ -44,6 +45,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class PhoneScreenshot {
 
     private static final int MAX_EDGE = 3840;
+    /** 临时诊断，定位完成后删除 */
+    private static final String TAG = "PhoneScreenshot";
+    private static final boolean DIAG = true;
 
     public interface Callback {
         void onSuccess(Uri uri);
@@ -74,8 +78,10 @@ public final class PhoneScreenshot {
             } catch (Throwable ignored) {
             }
             if (frame != null) {
+                if (DIAG) try { Log.i(TAG, "path=DECODE frame=" + frame.getWidth() + "x" + frame.getHeight()); } catch (Throwable ignored) {}
                 Bitmap out = scaleToMax(frame, MAX_EDGE);
                 if (out != frame) {
+                    if (DIAG) try { Log.i(TAG, "after scaleToMax=" + out.getWidth() + "x" + out.getHeight()); } catch (Throwable ignored) {}
                     try {
                         frame.recycle();
                     } catch (Throwable ignored) {
@@ -84,12 +90,7 @@ public final class PhoneScreenshot {
                 saveAsync(activity, out, callback);
                 return;
             }
-            if (frame != null) {
-                try {
-                    frame.recycle();
-                } catch (Throwable ignored) {
-                }
-            }
+            if (DIAG) try { Log.i(TAG, "path=SURFACE_FALLBACK decodeFrame=null"); } catch (Throwable ignored) {}
             // 回退 Surface（主线程）
             main.post(() -> captureSurface(activity, playerView, main, callback));
         });
@@ -192,6 +193,11 @@ public final class PhoneScreenshot {
                 dstW = fitted[0];
                 dstH = fitted[1];
             }
+            if (DIAG) try {
+                Log.i(TAG, "meta=" + metaW + "x" + metaH
+                        + " playVideoSize=" + playW + "x" + playH
+                        + " dst=" + dstW + "x" + dstH);
+            } catch (Throwable ignored) {}
 
             Bitmap bitmap = null;
             // API 27+：按目标分辨率直接解码缩放帧（比先小后放大更锐）
@@ -199,37 +205,57 @@ public final class PhoneScreenshot {
                 try {
                     bitmap = retriever.getScaledFrameAtTime(
                             posUs, MediaMetadataRetriever.OPTION_CLOSEST, dstW, dstH);
-                } catch (Throwable ignored) {
+                    if (DIAG) try { Log.i(TAG, "getScaledFrameAtTime CLOSEST "
+                            + (bitmap == null ? "null" : (bitmap.getWidth() + "x" + bitmap.getHeight()))); } catch (Throwable ignored) {}
+                } catch (Throwable e) {
+                    if (DIAG) try { Log.i(TAG, "getScaledFrameAtTime CLOSEST err=" + e); } catch (Throwable ignored) {}
                 }
                 if (bitmap == null) {
                     try {
                         bitmap = retriever.getScaledFrameAtTime(
                                 posUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, dstW, dstH);
-                    } catch (Throwable ignored) {
+                        if (DIAG) try { Log.i(TAG, "getScaledFrameAtTime CLOSEST_SYNC "
+                                + (bitmap == null ? "null" : (bitmap.getWidth() + "x" + bitmap.getHeight()))); } catch (Throwable ignored) {}
+                    } catch (Throwable e) {
+                        if (DIAG) try { Log.i(TAG, "getScaledFrameAtTime CLOSEST_SYNC err=" + e); } catch (Throwable ignored) {}
                     }
                 }
+            } else {
+                if (DIAG) try { Log.i(TAG, "skip getScaledFrameAtTime dst invalid or API<27"); } catch (Throwable ignored) {}
             }
             if (bitmap == null) {
                 try {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                         bitmap = retriever.getFrameAtTime(posUs, MediaMetadataRetriever.OPTION_CLOSEST);
+                        if (DIAG) try { Log.i(TAG, "getFrameAtTime CLOSEST "
+                                + (bitmap == null ? "null" : (bitmap.getWidth() + "x" + bitmap.getHeight()))); } catch (Throwable ignored) {}
                     }
-                } catch (Throwable ignored) {
+                } catch (Throwable e) {
+                    if (DIAG) try { Log.i(TAG, "getFrameAtTime CLOSEST err=" + e); } catch (Throwable ignored) {}
                 }
             }
             if (bitmap == null) {
                 try {
                     bitmap = retriever.getFrameAtTime(posUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
-                } catch (Throwable ignored) {
+                    if (DIAG) try { Log.i(TAG, "getFrameAtTime CLOSEST_SYNC "
+                            + (bitmap == null ? "null" : (bitmap.getWidth() + "x" + bitmap.getHeight()))); } catch (Throwable ignored) {}
+                } catch (Throwable e) {
+                    if (DIAG) try { Log.i(TAG, "getFrameAtTime CLOSEST_SYNC err=" + e); } catch (Throwable ignored) {}
                 }
             }
             if (bitmap == null) {
                 try {
                     bitmap = retriever.getFrameAtTime(posUs);
-                } catch (Throwable ignored) {
+                    if (DIAG) try { Log.i(TAG, "getFrameAtTime default "
+                            + (bitmap == null ? "null" : (bitmap.getWidth() + "x" + bitmap.getHeight()))); } catch (Throwable ignored) {}
+                } catch (Throwable e) {
+                    if (DIAG) try { Log.i(TAG, "getFrameAtTime default err=" + e); } catch (Throwable ignored) {}
                 }
             }
-            if (bitmap == null) return null;
+            if (bitmap == null) {
+                if (DIAG) try { Log.i(TAG, "decode all methods null"); } catch (Throwable ignored) {}
+                return null;
+            }
             // 若普通出帧分辨率明显低于已解析的片源目标，再强制按目标尺寸 scaled 一次
             if (dstW > 0 && dstH > 0
                     && (bitmap.getWidth() * bitmap.getHeight() < dstW * dstH * 9 / 10)
@@ -316,6 +342,12 @@ public final class PhoneScreenshot {
 
         // 固定最高可用分辨率，不因失败降档重试
         int[] full = fit(srcW, srcH, MAX_EDGE);
+        if (DIAG) try {
+            Log.i(TAG, "surface surf=" + surfW + "x" + surfH
+                    + " video=" + (video != null ? video[0] + "x" + video[1] : "null")
+                    + " target=" + srcW + "x" + srcH
+                    + " pixelCopy=" + full[0] + "x" + full[1]);
+        } catch (Throwable ignored) {}
         tryCopyOnce(activity, surfaceView, surface, full[0], full[1], main, callback);
     }
 
@@ -592,6 +624,7 @@ public final class PhoneScreenshot {
                     }
                     toSave = sharp;
                 }
+                if (DIAG) try { Log.i(TAG, "savePng bitmap=" + toSave.getWidth() + "x" + toSave.getHeight()); } catch (Throwable ignored) {}
                 uri = savePng(activity, toSave);
             } catch (Throwable e) {
                 err = e.getMessage();
