@@ -4,6 +4,12 @@ import android.app.Activity;
 import android.content.ContentValues;
 import android.graphics.Bitmap;
 import android.graphics.Rect;
+import android.graphics.ImageFormat;
+import android.media.Image;
+import android.media.ImageReader;
+import android.media.MediaCodec;
+import android.media.MediaExtractor;
+import android.media.MediaFormat;
 import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.util.Log;
@@ -102,6 +108,25 @@ public final class PhoneScreenshot {
      */
     @Nullable
     private static Bitmap tryDecodeFrame(@Nullable Player player) {
+        Bitmap retrieverBmp = tryDecodeFrameRetriever(player);
+        if (retrieverBmp != null) return retrieverBmp;
+        try {
+            if (player == null) return null;
+            MediaItem item = player.getCurrentMediaItem();
+            if (item == null || item.localConfiguration == null) return null;
+            Uri uri = item.localConfiguration.uri;
+            long posUs = Math.max(0L, player.getCurrentPosition()) * 1000L;
+            Map<String, String> headers = extractHeaders(item);
+            if (DIAG) try { Log.i(TAG, "retriever failed, trying MediaCodec uri=" + uri); } catch (Throwable ignored) {}
+            return tryMediaCodecFrame(uri, headers, posUs, player);
+        } catch (Throwable e) {
+            if (DIAG) try { Log.i(TAG, "codec wrapper err=" + e); } catch (Throwable ignored) {}
+            return null;
+        }
+    }
+
+    @Nullable
+    private static Bitmap tryDecodeFrameRetriever(@Nullable Player player) {
         if (player == null) return null;
         MediaItem item;
         long posMs;
@@ -693,4 +718,221 @@ public final class PhoneScreenshot {
             return "error";
         }
     }
+
+    private static Map<String, String> extractHeaders(MediaItem item) {
+        Map<String, String> headers = new HashMap<>();
+        try {
+            Object conf = item.localConfiguration;
+            for (String fieldName : new String[]{"httpRequestHeaders", "requestHeaders", "headers"}) {
+                try {
+                    java.lang.reflect.Field f = conf.getClass().getField(fieldName);
+                    Object v = f.get(conf);
+                    if (v instanceof Map) {
+                        for (Map.Entry<?, ?> e : ((Map<?, ?>) v).entrySet()) {
+                            if (e.getKey() != null && e.getValue() != null) {
+                                headers.put(String.valueOf(e.getKey()), String.valueOf(e.getValue()));
+                            }
+                        }
+                        break;
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return headers;
+    }
+
+    @Nullable
+    private static Bitmap tryMediaCodecFrame(Uri uri, Map<String, String> headers, long posUs, @Nullable Player player) {
+        if (uri == null) return null;
+        MediaExtractor extractor = null;
+        MediaCodec codec = null;
+        ImageReader reader = null;
+        try {
+            extractor = new MediaExtractor();
+            String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.US);
+            Map<String, String> hdr = headers == null ? Collections.emptyMap() : headers;
+            if ("file".equals(scheme) || "content".equals(scheme)) {
+                extractor.setDataSource(App.get(), uri, hdr.isEmpty() ? null : hdr);
+            } else if ("http".equals(scheme) || "https".equals(scheme)) {
+                extractor.setDataSource(uri.toString(), hdr);
+            } else {
+                if (DIAG) try { Log.i(TAG, "codec skip scheme=" + scheme); } catch (Throwable ignored) {}
+                return null;
+            }
+
+            int videoTrack = -1;
+            MediaFormat format = null;
+            for (int i = 0; i < extractor.getTrackCount(); i++) {
+                MediaFormat f = extractor.getTrackFormat(i);
+                String mime = f.getString(MediaFormat.KEY_MIME);
+                if (mime != null && mime.startsWith("video/")) {
+                    videoTrack = i;
+                    format = f;
+                    break;
+                }
+            }
+            if (videoTrack < 0 || format == null) {
+                if (DIAG) try { Log.i(TAG, "codec no video track"); } catch (Throwable ignored) {}
+                return null;
+            }
+            extractor.selectTrack(videoTrack);
+            try {
+                extractor.seekTo(posUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC);
+            } catch (Throwable ignored) {
+            }
+
+            int width = format.containsKey(MediaFormat.KEY_WIDTH) ? format.getInteger(MediaFormat.KEY_WIDTH) : 0;
+            int height = format.containsKey(MediaFormat.KEY_HEIGHT) ? format.getInteger(MediaFormat.KEY_HEIGHT) : 0;
+            if ((width <= 0 || height <= 0) && player != null) {
+                try {
+                    VideoSize vs = player.getVideoSize();
+                    if (vs != null) {
+                        width = vs.width;
+                        height = vs.height;
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+            if (width <= 0 || height <= 0) {
+                if (DIAG) try { Log.i(TAG, "codec unknown size"); } catch (Throwable ignored) {}
+                return null;
+            }
+            int[] fitted = fit(width, height, MAX_EDGE);
+            int outW = fitted[0];
+            int outH = fitted[1];
+            String mime = format.getString(MediaFormat.KEY_MIME);
+            if (mime == null) return null;
+            if (DIAG) try {
+                Log.i(TAG, "codec track=" + width + "x" + height + " out=" + outW + "x" + outH + " mime=" + mime);
+            } catch (Throwable ignored) {}
+
+            reader = ImageReader.newInstance(outW, outH, ImageFormat.YUV_420_888, 2);
+            codec = MediaCodec.createDecoderByType(mime);
+            codec.configure(format, reader.getSurface(), null, 0);
+            codec.start();
+
+            boolean inputDone = false;
+            boolean gotFrame = false;
+            long deadline = System.nanoTime() + 8_000_000_000L;
+            MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
+            Bitmap result = null;
+            int framesPastTarget = 0;
+
+            while (!gotFrame && System.nanoTime() < deadline) {
+                if (!inputDone) {
+                    int inIndex = codec.dequeueInputBuffer(10000);
+                    if (inIndex >= 0) {
+                        java.nio.ByteBuffer inBuf = codec.getInputBuffer(inIndex);
+                        if (inBuf == null) break;
+                        int sampleSize = extractor.readSampleData(inBuf, 0);
+                        if (sampleSize < 0) {
+                            codec.queueInputBuffer(inIndex, 0, 0, 0L, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
+                            inputDone = true;
+                        } else {
+                            long sampleTime = extractor.getSampleTime();
+                            codec.queueInputBuffer(inIndex, 0, sampleSize, sampleTime, 0);
+                            extractor.advance();
+                            if (sampleTime >= posUs) {
+                                framesPastTarget++;
+                                if (framesPastTarget > 12) {
+                                    // 再喂几帧后结束输入，促使输出
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                }
+                int outIndex = codec.dequeueOutputBuffer(info, 10000);
+                if (outIndex >= 0) {
+                    boolean render = info.size > 0 && (info.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0;
+                    // 只在达到目标时间附近才取图
+                    boolean near = info.presentationTimeUs + 500000 >= posUs || posUs < 1000000;
+                    codec.releaseOutputBuffer(outIndex, render && near);
+                    if (render && near) {
+                        Image image = null;
+                        try {
+                            for (int w = 0; w < 50 && image == null; w++) {
+                                image = reader.acquireLatestImage();
+                                if (image == null) {
+                                    try { Thread.sleep(15); } catch (InterruptedException ignored) {}
+                                }
+                            }
+                            if (image != null) {
+                                result = yuv420ToBitmap(image);
+                                if (DIAG) try {
+                                    Log.i(TAG, "codec frame=" + (result == null ? "null" : (result.getWidth() + "x" + result.getHeight())));
+                                } catch (Throwable ignored) {}
+                                if (result != null) gotFrame = true;
+                            }
+                        } finally {
+                            if (image != null) {
+                                try { image.close(); } catch (Throwable ignored) {}
+                            }
+                        }
+                    }
+                    if ((info.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) break;
+                }
+            }
+            return result;
+        } catch (Throwable e) {
+            if (DIAG) try { Log.i(TAG, "codec error: " + e); } catch (Throwable ignored) {}
+            return null;
+        } finally {
+            try { if (codec != null) { codec.stop(); codec.release(); } } catch (Throwable ignored) {}
+            try { if (extractor != null) extractor.release(); } catch (Throwable ignored) {}
+            try { if (reader != null) reader.close(); } catch (Throwable ignored) {}
+        }
+    }
+
+    private static Bitmap yuv420ToBitmap(Image image) {
+        int width = image.getWidth();
+        int height = image.getHeight();
+        Image.Plane[] planes = image.getPlanes();
+        if (planes == null || planes.length < 3) return null;
+        java.nio.ByteBuffer yBuf = planes[0].getBuffer();
+        java.nio.ByteBuffer uBuf = planes[1].getBuffer();
+        java.nio.ByteBuffer vBuf = planes[2].getBuffer();
+        int yRow = planes[0].getRowStride();
+        int yPix = planes[0].getPixelStride();
+        int uRow = planes[1].getRowStride();
+        int uPix = planes[1].getPixelStride();
+        int vRow = planes[2].getRowStride();
+        int vPix = planes[2].getPixelStride();
+        int[] argb = new int[width * height];
+        byte[] yBytes = new byte[yBuf.remaining()];
+        byte[] uBytes = new byte[uBuf.remaining()];
+        byte[] vBytes = new byte[vBuf.remaining()];
+        yBuf.get(yBytes);
+        uBuf.get(uBytes);
+        vBuf.get(vBytes);
+        for (int j = 0; j < height; j++) {
+            for (int i = 0; i < width; i++) {
+                int yIndex = j * yRow + i * yPix;
+                int uIndex = (j >> 1) * uRow + (i >> 1) * uPix;
+                int vIndex = (j >> 1) * vRow + (i >> 1) * vPix;
+                int y = (yIndex < yBytes.length ? yBytes[yIndex] : 0) & 0xff;
+                int u = (uIndex < uBytes.length ? uBytes[uIndex] : 128) & 0xff;
+                int v = (vIndex < vBytes.length ? vBytes[vIndex] : 128) & 0xff;
+                y = y - 16;
+                if (y < 0) y = 0;
+                int c = 298 * y;
+                int d = u - 128;
+                int e = v - 128;
+                int r = (c + 409 * e + 128) >> 8;
+                int g = (c - 100 * d - 208 * e + 128) >> 8;
+                int b = (c + 516 * d + 128) >> 8;
+                if (r < 0) r = 0; else if (r > 255) r = 255;
+                if (g < 0) g = 0; else if (g > 255) g = 255;
+                if (b < 0) b = 0; else if (b > 255) b = 255;
+                argb[j * width + i] = 0xff000000 | (r << 16) | (g << 8) | b;
+            }
+        }
+        Bitmap bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        bmp.setPixels(argb, 0, width, 0, 0, width, height);
+        return bmp;
+    }
+
+
 }
