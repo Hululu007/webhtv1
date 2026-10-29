@@ -199,6 +199,22 @@ public final class PhoneScreenshot {
         }
     }
 
+
+    /** 从 Exo/Media3 Player 读取当前视频宽高；失败返回 {0,0} */
+    private static int[] resolveVideoSize(PlayerView playerView) {
+        try {
+            if (playerView == null) return new int[]{0, 0};
+            Player player = playerView.getPlayer();
+            if (player == null) return new int[]{0, 0};
+            VideoSize vs = player.getVideoSize();
+            if (vs != null && vs.width > 0 && vs.height > 0) {
+                return new int[]{vs.width, vs.height};
+            }
+        } catch (Throwable ignored) {
+        }
+        return new int[]{0, 0};
+    }
+
     private static int[] fit(int w, int h, int maxEdge) {
         int max = Math.max(w, h);
         if (max <= maxEdge) return new int[]{Math.max(1, w), Math.max(1, h)};
