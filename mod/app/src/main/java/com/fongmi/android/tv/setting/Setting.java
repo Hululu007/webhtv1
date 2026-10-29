@@ -854,11 +854,11 @@ public class Setting {
     }
 
     /** 播放控制栏截图按键（默认开） */
-    /** 截图：0=关 1=PNG 2=WebP无损 3=WebP95 */
+    /** 截图：0=关 1=PNG 2=WebP无损 3=WebP98 */
     public static final int SCREENSHOT_OFF = 0;
     public static final int SCREENSHOT_PNG = 1;
     public static final int SCREENSHOT_WEBP = 2;
-    public static final int SCREENSHOT_WEBP95 = 3;
+    public static final int SCREENSHOT_WEBP98 = 3;
 
     public static int getPlaybackScreenshotMode() {
         try {
@@ -888,8 +888,8 @@ public class Setting {
                 return "关";
             case SCREENSHOT_WEBP:
                 return "WebP";
-            case SCREENSHOT_WEBP95:
-                return "WebP95";
+            case SCREENSHOT_WEBP98:
+                return "WebP98";
             case SCREENSHOT_PNG:
             default:
                 return "PNG";

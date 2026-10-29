@@ -614,8 +614,8 @@ public final class PhoneScreenshot {
         } catch (Throwable ignored) {
         }
         boolean webp = mode == com.fongmi.android.tv.setting.Setting.SCREENSHOT_WEBP
-                || mode == com.fongmi.android.tv.setting.Setting.SCREENSHOT_WEBP95;
-        boolean webp95 = mode == com.fongmi.android.tv.setting.Setting.SCREENSHOT_WEBP95;
+                || mode == com.fongmi.android.tv.setting.Setting.SCREENSHOT_WEBP98;
+        boolean webp98 = mode == com.fongmi.android.tv.setting.Setting.SCREENSHOT_WEBP98;
         String ext = webp ? ".webp" : ".png";
         String mime = webp ? "image/webp" : "image/png";
         String name = "WEBHTV_" + new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date()) + ext;
@@ -632,11 +632,11 @@ public final class PhoneScreenshot {
             try (OutputStream os = activity.getContentResolver().openOutputStream(uri)) {
                 if (os == null) throw new IllegalStateException("openOutputStream failed");
                 boolean ok;
-                if (webp95) {
+                if (webp98) {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                        ok = bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, 95, os);
+                        ok = bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, 98, os);
                     } else {
-                        ok = bitmap.compress(Bitmap.CompressFormat.WEBP, 95, os);
+                        ok = bitmap.compress(Bitmap.CompressFormat.WEBP, 98, os);
                     }
                 } else if (webp) {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
