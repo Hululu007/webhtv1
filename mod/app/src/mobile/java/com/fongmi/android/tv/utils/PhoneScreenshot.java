@@ -150,35 +150,71 @@ public final class PhoneScreenshot {
                 return null;
             }
 
-            Bitmap bitmap = null;
+            // 片源宽高（优先 metadata，其次播放器 VideoSize）
+            int dstW = 0, dstH = 0;
             try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                    // 优先获取与时间点最接近的帧（可能触发软解/平台解码一次）
-                    bitmap = retriever.getFrameAtTime(posUs, MediaMetadataRetriever.OPTION_CLOSEST);
-                }
-                if (bitmap == null) {
-                    bitmap = retriever.getFrameAtTime(posUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
-                }
-                if (bitmap == null) {
-                    bitmap = retriever.getFrameAtTime(posUs);
+                String ws = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH);
+                String hs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT);
+                if (ws != null && hs != null) {
+                    dstW = Integer.parseInt(ws);
+                    dstH = Integer.parseInt(hs);
                 }
             } catch (Throwable ignored) {
             }
-            if (bitmap == null) return null;
+            if (dstW <= 0 || dstH <= 0) {
+                try {
+                    VideoSize vs = player.getVideoSize();
+                    if (vs != null && vs.width > 0 && vs.height > 0) {
+                        dstW = vs.width;
+                        dstH = vs.height;
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+            // 长边上限 4K，等比缩放目标尺寸
+            if (dstW > 0 && dstH > 0) {
+                int[] fitted = fit(dstW, dstH, MAX_EDGE);
+                dstW = fitted[0];
+                dstH = fitted[1];
+            }
 
-            // 若能读到元数据宽高且明显更大，尝试按元数据尺寸理解（帧本身已是解码输出）
-            try {
-                String w = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH);
-                String h = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT);
-                if (w != null && h != null) {
-                    int mw = Integer.parseInt(w);
-                    int mh = Integer.parseInt(h);
-                    if (mw > 0 && mh > 0 && (bitmap.getWidth() < mw || bitmap.getHeight() < mh)) {
-                        // 帧已经是解码结果，一般等于或接近；不强制放大
+            Bitmap bitmap = null;
+            // API 27+：按目标分辨率直接解码缩放帧（比先小后放大更锐）
+            if (dstW > 0 && dstH > 0 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                try {
+                    bitmap = retriever.getScaledFrameAtTime(
+                            posUs, MediaMetadataRetriever.OPTION_CLOSEST, dstW, dstH);
+                } catch (Throwable ignored) {
+                }
+                if (bitmap == null) {
+                    try {
+                        bitmap = retriever.getScaledFrameAtTime(
+                                posUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, dstW, dstH);
+                    } catch (Throwable ignored) {
                     }
                 }
-            } catch (Throwable ignored) {
             }
+            if (bitmap == null) {
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                        bitmap = retriever.getFrameAtTime(posUs, MediaMetadataRetriever.OPTION_CLOSEST);
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+            if (bitmap == null) {
+                try {
+                    bitmap = retriever.getFrameAtTime(posUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
+                } catch (Throwable ignored) {
+                }
+            }
+            if (bitmap == null) {
+                try {
+                    bitmap = retriever.getFrameAtTime(posUs);
+                } catch (Throwable ignored) {
+                }
+            }
+            if (bitmap == null) return null;
             return bitmap;
         } catch (Throwable e) {
             return null;
@@ -512,6 +548,14 @@ public final class PhoneScreenshot {
                     } catch (Throwable ignored) {
                     }
                     toSave = enhanced;
+                }
+                Bitmap sharp = mildSharpen(toSave);
+                if (sharp != toSave) {
+                    try {
+                        toSave.recycle();
+                    } catch (Throwable ignored) {
+                    }
+                    toSave = sharp;
                 }
                 uri = savePng(activity, toSave);
             } catch (Throwable e) {
