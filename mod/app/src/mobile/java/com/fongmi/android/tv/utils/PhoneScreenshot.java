@@ -373,6 +373,104 @@ public final class PhoneScreenshot {
         }
     }
 
+
+    /**
+     * 视频帧常见 limited range (16–235) 被当 full range 会发灰。
+     * 检测后拉伸到 0–255，并略提对比，仅用于截图落盘。
+     */
+    private static Bitmap enhanceVideoLevels(Bitmap src) {
+        if (src == null || src.isRecycled()) return src;
+        try {
+            int w = src.getWidth();
+            int h = src.getHeight();
+            if (w < 2 || h < 2) return src;
+            int minL = 255, maxL = 0, samples = 0;
+            long sum = 0;
+            for (int yi = 1; yi <= 6; yi++) {
+                for (int xi = 1; xi <= 6; xi++) {
+                    int c = src.getPixel(w * xi / 7, h * yi / 7);
+                    int r = (c >> 16) & 0xff;
+                    int g = (c >> 8) & 0xff;
+                    int b = c & 0xff;
+                    int y = (r * 3 + g * 6 + b) / 10;
+                    if (y < minL) minL = y;
+                    if (y > maxL) maxL = y;
+                    sum += y;
+                    samples++;
+                }
+            }
+            if (samples == 0) return src;
+            int avg = (int) (sum / samples);
+            boolean limitedLike = (minL >= 8 && minL <= 40 && maxL <= 245 && maxL >= 180)
+                    || (minL >= 12 && maxL - minL < 200 && avg >= 80 && avg <= 180);
+            if (!limitedLike && maxL - minL > 40) {
+                return applyContrast(src, 1.06f, -6);
+            }
+
+            Bitmap out = src.isMutable()
+                    ? src
+                    : src.copy(Bitmap.Config.ARGB_8888, true);
+            if (out == null) return src;
+            int[] pixels = new int[w * h];
+            out.getPixels(pixels, 0, w, 0, 0, w, h);
+            for (int i = 0; i < pixels.length; i++) {
+                int c = pixels[i];
+                int a = (c >>> 24) & 0xff;
+                int r = contrast1(expandSample((c >> 16) & 0xff));
+                int g = contrast1(expandSample((c >> 8) & 0xff));
+                int b = contrast1(expandSample(c & 0xff));
+                pixels[i] = (a << 24) | (r << 16) | (g << 8) | b;
+            }
+            out.setPixels(pixels, 0, w, 0, 0, w, h);
+            return out;
+        } catch (Throwable e) {
+            return src;
+        }
+    }
+
+    private static int expandSample(int v) {
+        int x = (v - 16) * 255 / 219;
+        if (x < 0) return 0;
+        if (x > 255) return 255;
+        return x;
+    }
+
+    private static int contrast1(int v) {
+        int x = (int) ((v - 128) * 1.08f + 128);
+        if (x < 0) return 0;
+        if (x > 255) return 255;
+        return x;
+    }
+
+    private static Bitmap applyContrast(Bitmap src, float factor, int brightness) {
+        try {
+            Bitmap out = src.isMutable() ? src : src.copy(Bitmap.Config.ARGB_8888, true);
+            if (out == null) return src;
+            int w = out.getWidth();
+            int h = out.getHeight();
+            int[] pixels = new int[w * h];
+            out.getPixels(pixels, 0, w, 0, 0, w, h);
+            for (int i = 0; i < pixels.length; i++) {
+                int c = pixels[i];
+                int a = (c >>> 24) & 0xff;
+                int r = clamp((int) (((c >> 16) & 0xff) * factor + brightness));
+                int g = clamp((int) (((c >> 8) & 0xff) * factor + brightness));
+                int b = clamp((int) ((c & 0xff) * factor + brightness));
+                pixels[i] = (a << 24) | (r << 16) | (g << 8) | b;
+            }
+            out.setPixels(pixels, 0, w, 0, 0, w, h);
+            return out;
+        } catch (Throwable e) {
+            return src;
+        }
+    }
+
+    private static int clamp(int v) {
+        if (v < 0) return 0;
+        if (v > 255) return 255;
+        return v;
+    }
+
     private static boolean isBad(Bitmap bitmap) {
         if (bitmap == null || bitmap.isRecycled()) return true;
         try {
