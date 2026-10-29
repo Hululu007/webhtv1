@@ -631,10 +631,11 @@ public final class PhoneScreenshot {
                 if (os == null) throw new IllegalStateException("openOutputStream failed");
                 boolean ok;
                 if (webp) {
+                    // 无损 WebP（API 30+ WEBP_LOSSLESS；旧版 quality=100 尽量保真）
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                        ok = bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, 90, os);
+                        ok = bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSLESS, 100, os);
                     } else {
-                        ok = bitmap.compress(Bitmap.CompressFormat.WEBP, 90, os);
+                        ok = bitmap.compress(Bitmap.CompressFormat.WEBP, 100, os);
                     }
                 } else {
                     ok = bitmap.compress(Bitmap.CompressFormat.PNG, 100, os);
