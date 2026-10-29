@@ -122,7 +122,7 @@ public class SettingPersonalActivity extends BaseActivity {
         try { mBinding.searchPanFirstText.setText(Setting.getSearchResultPreferText()); } catch (Throwable ignored) {}
         try { mBinding.playDirectPanPreferText.setText(getSwitch(Setting.isPlayDirectPanPrefer())); } catch (Throwable ignored) {}
         try { mBinding.hideHomeTypeMoreText.setText(getSwitch(Setting.isHideHomeTypeMore())); } catch (Throwable ignored) {}
-        try { mBinding.playbackScreenshotBtnText.setText(getSwitch(Setting.isPlaybackScreenshotBtn())); } catch (Throwable ignored) {}
+        try { mBinding.playbackScreenshotBtnText.setText(Setting.getPlaybackScreenshotModeLabel()); } catch (Throwable ignored) {}
         try { mBinding.webviewLiveText.setText(getSwitch(Setting.isWebViewLiveEnabled())); } catch (Throwable ignored) {}
         try { mBinding.recommendSourceText.setText(recommendSourceLabel()); } catch (Throwable ignored) {}
         // TV-only rows may be GONE on mobile via layout; still safe if present
@@ -390,8 +390,9 @@ public class SettingPersonalActivity extends BaseActivity {
 
     private void setPlaybackScreenshotBtn(View view) {
         try {
-            Setting.putPlaybackScreenshotBtn(!Setting.isPlaybackScreenshotBtn());
-            mBinding.playbackScreenshotBtnText.setText(getSwitch(Setting.isPlaybackScreenshotBtn()));
+            Setting.cyclePlaybackScreenshotMode();
+            mBinding.playbackScreenshotBtnText.setText(Setting.getPlaybackScreenshotModeLabel());
+            try { com.fongmi.android.tv.utils.Notify.show(Setting.getPlaybackScreenshotModeLabel()); } catch (Throwable ignored) {}
         } catch (Throwable ignored) {
         }
     }

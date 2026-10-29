@@ -402,8 +402,8 @@ public class SettingPersonalActivity extends BaseActivity {
 
     private void setPlaybackScreenshotBtn(View view) {
         try {
-            Setting.putPlaybackScreenshotBtn(!Setting.isPlaybackScreenshotBtn());
-            mBinding.playbackScreenshotBtnText.setText(getSwitch(Setting.isPlaybackScreenshotBtn()));
+            Setting.cyclePlaybackScreenshotMode();
+            mBinding.playbackScreenshotBtnText.setText(Setting.getPlaybackScreenshotModeLabel());
         } catch (Throwable ignored) {
         }
     }

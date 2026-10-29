@@ -53,7 +53,7 @@ public final class PhoneScreenshot {
     private static final int MAX_EDGE = 3840;
     /** 临时诊断，定位完成后删除 */
     private static final String TAG = "PhoneScreenshot";
-    private static final boolean DIAG = true;
+    private static final boolean DIAG = false;
 
     public interface Callback {
         void onSuccess(Uri uri);
@@ -603,10 +603,23 @@ public final class PhoneScreenshot {
     }
 
     private static Uri savePng(Activity activity, Bitmap bitmap) throws Exception {
-        String name = "WEBHTV_" + new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date()) + ".png";
+        // 名称保留；实际格式由设置决定
+        return saveImage(activity, bitmap);
+    }
+
+    private static Uri saveImage(Activity activity, Bitmap bitmap) throws Exception {
+        boolean webp = false;
+        try {
+            webp = com.fongmi.android.tv.setting.Setting.getPlaybackScreenshotMode()
+                    == com.fongmi.android.tv.setting.Setting.SCREENSHOT_WEBP;
+        } catch (Throwable ignored) {
+        }
+        String ext = webp ? ".webp" : ".png";
+        String mime = webp ? "image/webp" : "image/png";
+        String name = "WEBHTV_" + new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date()) + ext;
         ContentValues values = new ContentValues();
         values.put(MediaStore.Images.Media.DISPLAY_NAME, name);
-        values.put(MediaStore.Images.Media.MIME_TYPE, "image/png");
+        values.put(MediaStore.Images.Media.MIME_TYPE, mime);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             values.put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/WEBHTV");
             values.put(MediaStore.Images.Media.IS_PENDING, 1);
@@ -616,9 +629,17 @@ public final class PhoneScreenshot {
         try {
             try (OutputStream os = activity.getContentResolver().openOutputStream(uri)) {
                 if (os == null) throw new IllegalStateException("openOutputStream failed");
-                if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, os)) {
-                    throw new IllegalStateException("compress failed");
+                boolean ok;
+                if (webp) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        ok = bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, 90, os);
+                    } else {
+                        ok = bitmap.compress(Bitmap.CompressFormat.WEBP, 90, os);
+                    }
+                } else {
+                    ok = bitmap.compress(Bitmap.CompressFormat.PNG, 100, os);
                 }
+                if (!ok) throw new IllegalStateException("compress failed");
                 os.flush();
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -628,7 +649,6 @@ public final class PhoneScreenshot {
             }
             return uri;
         } catch (Throwable e) {
-            // 删除残留，避免 IS_PENDING=1 或损坏条目留在相册
             try {
                 activity.getContentResolver().delete(uri, null, null);
             } catch (Throwable ignored) {

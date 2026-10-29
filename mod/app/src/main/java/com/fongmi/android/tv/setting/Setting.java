@@ -854,12 +854,52 @@ public class Setting {
     }
 
     /** 播放控制栏截图按键（默认开） */
+    /** 截图：0=关 1=PNG 2=WebP */
+    public static final int SCREENSHOT_OFF = 0;
+    public static final int SCREENSHOT_PNG = 1;
+    public static final int SCREENSHOT_WEBP = 2;
+
+    public static int getPlaybackScreenshotMode() {
+        try {
+            // 新键：-1 表示未写入，回退旧布尔
+            int m = Prefers.getInt("playback_screenshot_mode", -1);
+            if (m >= 0 && m <= 2) return m;
+        } catch (Throwable ignored) {
+        }
+        try {
+            return Prefers.getBoolean("playback_screenshot_btn", true) ? SCREENSHOT_PNG : SCREENSHOT_OFF;
+        } catch (Throwable ignored) {
+            return SCREENSHOT_PNG;
+        }
+    }
+
+    public static void putPlaybackScreenshotMode(int mode) {
+        if (mode < 0 || mode > 2) mode = SCREENSHOT_PNG;
+        Prefers.put("playback_screenshot_mode", mode);
+    }
+
+    public static void cyclePlaybackScreenshotMode() {
+        putPlaybackScreenshotMode((getPlaybackScreenshotMode() + 1) % 3);
+    }
+
+    public static String getPlaybackScreenshotModeLabel() {
+        switch (getPlaybackScreenshotMode()) {
+            case SCREENSHOT_OFF:
+                return "关";
+            case SCREENSHOT_WEBP:
+                return "WebP";
+            case SCREENSHOT_PNG:
+            default:
+                return "PNG";
+        }
+    }
+
     public static boolean isPlaybackScreenshotBtn() {
-        return Prefers.getBoolean("playback_screenshot_btn", true);
+        return getPlaybackScreenshotMode() != SCREENSHOT_OFF;
     }
 
     public static void putPlaybackScreenshotBtn(boolean value) {
-        Prefers.put("playback_screenshot_btn", value);
+        putPlaybackScreenshotMode(value ? SCREENSHOT_PNG : SCREENSHOT_OFF);
     }
 
 
