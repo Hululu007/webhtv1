@@ -567,6 +567,15 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
         if (TextUtils.isEmpty(id) || id.equals(oldId)) return;
         saveHistory();
         getIntent().putExtras(intent);
+        // PUSH_TV_NEWINTENT_FIX
+        detailRequested = false;
+        try {
+            if (service() != null) {
+                player().reset();
+                player().stop();
+            }
+        } catch (Throwable ignored) {
+        }
         checkId();
     }
 
@@ -678,6 +687,8 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
         mBinding.control.action.lut.setOnClickListener(view -> onLut());
         mBinding.control.action.speed.setOnClickListener(view -> onSpeed());
         mBinding.control.action.reset.setOnClickListener(view -> onReset());
+        try { mBinding.control.action.screenshot.setVisibility(android.view.View.GONE); } catch (Throwable ignored) {}
+        updateScreenshotBtn();
         mBinding.control.action.title.setOnClickListener(view -> onTitle());
         mBinding.control.action.player.setOnClickListener(view -> onPlayerKernel());
         mBinding.control.action.player.setOnLongClickListener(view -> onChooseLong());
@@ -1070,8 +1081,10 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
 
     private boolean hasPlayableEpisode(Vod item) {
         if (item == null || item.getFlags() == null) return false;
-        for (Flag f : item.getFlags()) {
-            if (f != null && f.getEpisodes() != null && !f.getEpisodes().isEmpty()) return true;
+        for (Object o : item.getFlags()) {
+            if (!(o instanceof Flag)) continue;
+            Flag f = (Flag) o;
+            if (f.getEpisodes() != null && !f.getEpisodes().isEmpty()) return true;
         }
         return false;
     }
@@ -1224,6 +1237,7 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
 
     private void setDetail(Vod item) {
         if (tryDrillPanFolder(item, null)) return;
+        maybeStartPanPreferSearch(item);
         item.checkPic(getPic());
         item.checkName(getName());
         item.checkContent(getContent());
@@ -1300,6 +1314,15 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
 
     private void setPlayer(Result result) {
         if (isFinishing() || isDestroyed()) return;
+        // PUSH_HANDOFF_SILENT: push:// 已切到 push_agent，忽略空地址结果
+        try {
+            if (com.fongmi.android.tv.player.extractor.Push.isHandoff()) {
+                if (result == null || result.hasMsg() || result.getRealUrl() == null || result.getRealUrl().isEmpty()) {
+                    return;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
         SpiderDebug.log("video-flow", "player finish cost=%dms useParse=%s multi=%s msg=%s", System.currentTimeMillis() - playerStartTime, result.shouldUseParse(), result.getUrl().isMulti(), result.getMsg());
         if (service() == null) {
             mPendingPlayer = result;
@@ -5605,8 +5628,28 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
         setTitleVisible();
     }
 
+    
+    private void updateScreenshotBtn() {
+        try { mBinding.control.action.screenshot.setVisibility(android.view.View.GONE); } catch (Throwable ignored) {}
+    }
+
+
+
+
+
+
+
+
     @Override
     protected void onError(String msg) {
+        try {
+            if (com.fongmi.android.tv.player.extractor.Push.isHandoff()) {
+                com.fongmi.android.tv.player.extractor.Push.consumeHandoff();
+                try { if (service() != null) { player().reset(); player().stop(); } } catch (Throwable ignored) {}
+                return;
+            }
+        } catch (Throwable ignored) {
+        }
         recordPlayHealth(false, msg);
         Track.delete(player().getKey());
         mClock.setCallback(null);
@@ -5813,6 +5856,28 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
         else nextFlag(position);
     }
 
+    
+    // PLAY_DIRECT_PAN_STRENGTHEN: 非网盘详情成功后，主动搜网盘源并在命中时 nextSite
+    private boolean mPanPreferSearchStarted = false;
+
+    private void maybeStartPanPreferSearch(Vod item) {
+        try {
+            if (mPanPreferSearchStarted) return;
+            if (!com.fongmi.android.tv.setting.Setting.isPlayDirectPanPrefer()) return;
+            if (item != null && com.fongmi.android.tv.utils.PanSiteHelper.isPanVod(item)) return;
+            Site cur = getSite();
+            if (cur != null && com.fongmi.android.tv.utils.PanSiteHelper.isPanSite(cur)) return;
+            String name = mBinding.name.getText() != null ? mBinding.name.getText().toString() : "";
+            if (name == null || name.trim().isEmpty()) {
+                if (item != null) name = item.getName();
+            }
+            if (name == null || name.trim().isEmpty()) return;
+            mPanPreferSearchStarted = true;
+            initSearch(name.trim(), true);
+        } catch (Throwable ignored) {
+        }
+    }
+
     private void checkSearch(boolean force) {
         boolean msearch = getId() != null && getId().startsWith("msearch:")
                 && com.fongmi.android.tv.setting.Setting.isPlayDirect();
@@ -5830,7 +5895,16 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
     }
 
     private boolean isPass(Site item) {
-        if (isAutoMode() && !item.isChangeable()) return false;
+        // PLAY_DIRECT_PAN_STRENGTHEN: 网盘优先时，即使 changeable=0 也允许进搜源列表
+        if (isAutoMode() && !item.isChangeable()) {
+            try {
+                if (com.fongmi.android.tv.setting.Setting.isPlayDirectPanPrefer()
+                        && com.fongmi.android.tv.utils.PanSiteHelper.isPanSite(item)
+                        && item.isSearchable()) return true;
+            } catch (Throwable ignored) {
+            }
+            return false;
+        }
         return item.isSearchable();
     }
 
@@ -5847,14 +5921,43 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
         List<Site> sites = new ArrayList<>();
         for (Site site : VodConfig.get().getSites()) if (isPass(site)) sites.add(site);
         SiteHealthStore.sortSites(sites);
-        // 仅播放直达(msearch)：随机最多 N 站；普通搜索不截断
-        boolean limitDirect = (getId() != null && getId().startsWith("msearch:"))
-                || (isAutoMode() && com.fongmi.android.tv.setting.Setting.isPlayDirect());
-        if (limitDirect) {
-            int lim = com.fongmi.android.tv.setting.Setting.getPlayDirectSearchLimit();
-            if (lim > 0 && sites.size() > lim) {
-                java.util.Collections.shuffle(sites);
-                sites = new ArrayList<>(sites.subList(0, lim));
+        boolean panPrefer = false;
+        try {
+            panPrefer = com.fongmi.android.tv.setting.Setting.isPlayDirectPanPrefer();
+        } catch (Throwable ignored) {
+        }
+        // PLAY_DIRECT_PAN_STRENGTHEN: 网盘全量前置，截断不丢网盘
+        if (panPrefer && !sites.isEmpty()) {
+            java.util.ArrayList<Site> pan = new java.util.ArrayList<>();
+            java.util.ArrayList<Site> other = new java.util.ArrayList<>();
+            for (Site s : sites) {
+                if (com.fongmi.android.tv.utils.PanSiteHelper.isPanSite(s)) pan.add(s);
+                else other.add(s);
+            }
+            boolean limitDirect = (getId() != null && getId().startsWith("msearch:"))
+                    || (isAutoMode() && com.fongmi.android.tv.setting.Setting.isPlayDirect())
+                    || isAutoMode();
+            if (limitDirect) {
+                int lim = com.fongmi.android.tv.setting.Setting.getPlayDirectSearchLimit();
+                if (lim <= 0) lim = 10;
+                int rest = Math.max(0, lim - pan.size());
+                if (other.size() > rest) {
+                    java.util.Collections.shuffle(other);
+                    other = new java.util.ArrayList<>(other.subList(0, rest));
+                }
+            }
+            sites = new java.util.ArrayList<>(pan.size() + other.size());
+            sites.addAll(pan);
+            sites.addAll(other);
+        } else {
+            boolean limitDirect = (getId() != null && getId().startsWith("msearch:"))
+                    || (isAutoMode() && com.fongmi.android.tv.setting.Setting.isPlayDirect());
+            if (limitDirect) {
+                int lim = com.fongmi.android.tv.setting.Setting.getPlayDirectSearchLimit();
+                if (lim > 0 && sites.size() > lim) {
+                    java.util.Collections.shuffle(sites);
+                    sites = new ArrayList<>(sites.subList(0, lim));
+                }
             }
         }
         mViewModel.searchContent(sites, keyword, true);
@@ -5869,7 +5972,13 @@ public class VideoActivity extends PlaybackActivity implements CustomKeyDownVod.
         if (!isInitAuto() && !items.isEmpty()) {
             showQuickSearchDialog(items);
         }
-        if (isInitAuto() && (PlayerSetting.isAutoChange() || ((getId() != null && getId().startsWith("msearch:")) && com.fongmi.android.tv.setting.Setting.isPlayDirect()))) nextSite();
+        // PLAY_DIRECT_PAN_STRENGTHEN
+        boolean panPreferGo = false;
+        try {
+            panPreferGo = com.fongmi.android.tv.setting.Setting.isPlayDirectPanPrefer();
+        } catch (Throwable ignored) {
+        }
+        if (isInitAuto() && (PlayerSetting.isAutoChange() || panPreferGo || ((getId() != null && getId().startsWith("msearch:")) && com.fongmi.android.tv.setting.Setting.isPlayDirect()))) nextSite();
         if (items.isEmpty()) return;
         App.removeCallbacks(mR4);
     }

@@ -48,6 +48,11 @@ while IFS= read -r -d '' src; do
   echo "[mod] copy $rel"
 done < <(find "$MOD" -type f -print0)
 
+# 回退账号登录宿主（若仓库残留）
+rm -f "$ROOT/app/src/main/java/com/fongmi/android/tv/ui/activity/JarLoginHostActivity.java"
+find "$ROOT/app/src" -name 'JarLoginHostActivity.java' -delete 2>/dev/null || true
+
+
 
 
 
@@ -174,6 +179,17 @@ if [[ -f "$MOD/hooks/inject_jar_settings_shell.py" ]]; then
   python3 "$MOD/hooks/inject_jar_settings_shell.py" "$ROOT" || exit 1
 fi
 
+if [[ -f "$MOD/hooks/inject_webhome_fix.py" ]]; then
+  echo "[mod] inject_webhome_fix"
+  python3 "$MOD/hooks/inject_webhome_fix.py" "$ROOT" || exit 1
+fi
+
+if [[ -f "$MOD/hooks/inject_webhome_tv_fullscreen_btn.py" ]]; then
+  echo "[mod] inject_webhome_tv_fullscreen_btn"
+  python3 "$MOD/hooks/inject_webhome_tv_fullscreen_btn.py" "$ROOT" || exit 1
+fi
+
+
 if [[ -f "$MOD/hooks/inject_live_channel_zorder.py" ]]; then
   echo "[mod] inject_live_channel_zorder"
   python3 "$MOD/hooks/inject_live_channel_zorder.py" "$ROOT" || exit 1
@@ -218,4 +234,12 @@ echo "[mod] done"
 
 if [[ -f "$MOD/hooks/inject_stalled_auto_change.py" ]]; then
   python3 "$MOD/hooks/inject_stalled_auto_change.py" "$ROOT"
+fi
+
+if [[ -f "$MOD/hooks/inject_push_fast_handoff.py" ]]; then
+  python3 "$MOD/hooks/inject_push_fast_handoff.py" "$ROOT"
+fi
+
+if [[ -f "$MOD/hooks/inject_playback_screenshot.py" ]]; then
+  python3 "$MOD/hooks/inject_playback_screenshot.py" "$ROOT"
 fi

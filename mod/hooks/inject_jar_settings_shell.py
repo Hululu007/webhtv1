@@ -180,8 +180,49 @@ def patch_video() -> None:
         print("[mod] VideoActivity", flavor)
 
 
+def cleanup_login_host() -> None:
+    """回退账号登录劫持：删除宿主 Activity 与 manifest 注册。"""
+    host = ROOT / "app/src/main/java/com/fongmi/android/tv/ui/activity/JarLoginHostActivity.java"
+    if host.is_file():
+        host.unlink()
+        print("[mod] removed JarLoginHostActivity.java")
+    # also leanback/mobile copies if any
+    for p in ROOT.glob("app/src/**/JarLoginHostActivity.java"):
+        p.unlink()
+        print("[mod] removed", p)
+    import re
+    for rel in (
+        "app/src/main/AndroidManifest.xml",
+        "app/src/leanback/AndroidManifest.xml",
+        "app/src/mobile/AndroidManifest.xml",
+    ):
+        path = ROOT / rel
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        if "JarLoginHostActivity" not in text:
+            continue
+        text2 = re.sub(
+            r"\s*<activity\b[^>]*JarLoginHostActivity[\s\S]*?</activity>\s*",
+            "\n",
+            text,
+            count=5,
+        )
+        # self-closing form
+        text2 = re.sub(
+            r"\s*<activity\b[^>]*JarLoginHostActivity[^>]*/>\s*",
+            "\n",
+            text2,
+            count=5,
+        )
+        path.write_text(text2, encoding="utf-8")
+        print("[mod] stripped JarLoginHostActivity from", rel)
+
+
+
 def main() -> None:
     print("[mod] inject_jar_settings_shell v3 ROOT", ROOT)
+    cleanup_login_host()
     ensure_init()
     patch_app()
     shell = ROOT / "app/src/main/java/com/fongmi/android/tv/ui/dialog/JarPanSettingsShell.java"
