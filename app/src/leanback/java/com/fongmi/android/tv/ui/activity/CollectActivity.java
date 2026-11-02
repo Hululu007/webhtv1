@@ -30,6 +30,7 @@ import com.fongmi.android.tv.ui.adapter.CollectAdapter;
 import com.fongmi.android.tv.ui.adapter.SearchAdapter;
 import com.fongmi.android.tv.ui.base.BaseActivity;
 import com.fongmi.android.tv.ui.custom.CustomScroller;
+import com.fongmi.android.tv.ui.custom.FocusGridLayoutManager;
 import com.fongmi.android.tv.utils.ResUtil;
 import com.github.catvod.crawler.SpiderDebug;
 import com.google.gson.reflect.TypeToken;
@@ -129,7 +130,7 @@ public class CollectActivity extends BaseActivity implements CollectAdapter.OnCl
         mBinding.recycler.setHasFixedSize(true);
         mBinding.recycler.setItemAnimator(null);
         mBinding.recycler.setItemViewCacheSize(count * 3);
-        mBinding.recycler.setLayoutManager(new GridLayoutManager(this, count));
+        mBinding.recycler.setLayoutManager(new FocusGridLayoutManager(this, count));
         mBinding.recycler.addOnScrollListener(mScroller);
         mBinding.recycler.addOnScrollListener(mImageScrollListener = new RecyclerView.OnScrollListener() {
             @Override
